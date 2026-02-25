@@ -1,0 +1,14 @@
+{
+  "api_port": 8082,
+  "system_log": "system.log",
+  "alerts_log": "alerts.log",
+  "smtp": {
+    "enabled": true,
+    "host": "votre-serveur.com",
+    "port": 25,
+    "username": "user",
+    "password": "password",
+    "from": "alert@shinken.local",
+    "to": "admin@domaine.com"
+  }
+}

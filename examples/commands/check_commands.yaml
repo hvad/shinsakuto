@@ -1,0 +1,3 @@
+commands:
+  - id: check_ping
+    command_line: "/usr/bin/ping -c 3 $ADDRESS$"
