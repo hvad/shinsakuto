@@ -1,0 +1,6 @@
+hosts:
+  - id: linux-server-template
+    register: false 
+    check_command: check_ping
+    contacts:
+      - admin

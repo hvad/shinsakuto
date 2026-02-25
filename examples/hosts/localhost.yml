@@ -1,9 +1,14 @@
 hosts:
-  - id: linux-template
-    register: false
-    check_command: check_ping
-
   - id: localhost
-    use: linux-template
+    use: linux-server-template
+    register: true
     address: 127.0.0.1
-    alias: Mon Serveur Local
+    alias: Local Machine Monitoring
+
+services:
+  - id: HTTP_Check
+    host_name: localhost
+    check_command: check_http
+    normal_interval: 60
+    retry_interval: 20
+    max_attempts: 3

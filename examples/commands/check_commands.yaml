@@ -1,3 +1,6 @@
 commands:
   - id: check_ping
-    command_line: "/usr/bin/ping -c 3 $ADDRESS$"
+    command_line: "/sbin/ping -c 3 $ADDRESS$"
+    
+  - id: check_http
+    command_line: "/opt/local/bin/curl -s $ADDRESS$ --output /dev/null"

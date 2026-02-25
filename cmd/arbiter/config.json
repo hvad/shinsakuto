@@ -1,5 +1,5 @@
 {
   "scheduler_url": "http://127.0.0.1:8081",
-  "definitions_dir": "./example",
+  "definitions_dir": "./examples",
   "api_port": 9090
 }
