@@ -4,6 +4,8 @@ hosts:
     register: true
     address: 127.0.0.1
     alias: Local Machine Monitoring
+    hostgroups:
+      - linux-servers
 
 services:
   - id: HTTP_Check
