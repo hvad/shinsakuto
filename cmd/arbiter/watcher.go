@@ -59,11 +59,10 @@ func mergeFileToConfig(path string, target *models.GlobalConfig) error {
 }
 
 func processInheritance(cfg *models.GlobalConfig) *models.GlobalConfig {
+	// Host Templates
 	hostTemplates := make(map[string]models.Host)
 	for _, h := range cfg.Hosts {
-		if h.Register != nil && !*h.Register {
-			hostTemplates[h.ID] = h
-		}
+		if h.Register != nil && !*h.Register { hostTemplates[h.ID] = h }
 	}
 
 	var activeHosts []models.Host
@@ -72,7 +71,6 @@ func processInheritance(cfg *models.GlobalConfig) *models.GlobalConfig {
 			if h.Use != "" {
 				if tpl, ok := hostTemplates[h.Use]; ok {
 					if h.CheckCommand == "" { h.CheckCommand = tpl.CheckCommand }
-					if h.Address == "" { h.Address = tpl.Address }
 					if len(h.Contacts) == 0 { h.Contacts = tpl.Contacts }
 					if len(h.HostGroups) == 0 { h.HostGroups = tpl.HostGroups }
 				}
@@ -80,14 +78,38 @@ func processInheritance(cfg *models.GlobalConfig) *models.GlobalConfig {
 			activeHosts = append(activeHosts, h)
 		}
 	}
+
+	// Service Templates
+	serviceTemplates := make(map[string]models.Service)
+	for _, s := range cfg.Services {
+		if s.Register != nil && !*s.Register { serviceTemplates[s.ID] = s }
+	}
+
+	var activeServices []models.Service
+	for _, s := range cfg.Services {
+		if s.Register == nil || *s.Register {
+			if s.Use != "" {
+				if tpl, ok := serviceTemplates[s.Use]; ok {
+					if s.CheckCommand == "" { s.CheckCommand = tpl.CheckCommand }
+					if s.NormalInterval == 0 { s.NormalInterval = tpl.NormalInterval }
+					if s.RetryInterval == 0 { s.RetryInterval = tpl.RetryInterval }
+					if s.MaxAttempts == 0 { s.MaxAttempts = tpl.MaxAttempts }
+					if len(s.Contacts) == 0 { s.Contacts = tpl.Contacts }
+				}
+			}
+			activeServices = append(activeServices, s)
+		}
+	}
+
 	cfg.Hosts = activeHosts
+	cfg.Services = activeServices
 	return cfg
 }
 
 func refreshConfig() {
 	cfg, err := loadAndValidateAll()
 	if err != nil {
-		log.Printf("[Watcher] Configuration error, sync aborted: %v", err)
+		log.Printf("[Watcher] Configuration error: %v", err)
 		syncSuccess = false
 		return
 	}
@@ -108,6 +130,6 @@ func refreshConfig() {
 		resp.Body.Close()
 	} else {
 		syncSuccess = false
-		log.Printf("[Watcher] Sync with Scheduler failed: %v", err)
+		log.Printf("[Watcher] Failed to sync with Scheduler at %s", url)
 	}
 }

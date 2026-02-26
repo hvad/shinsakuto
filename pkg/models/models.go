@@ -26,31 +26,33 @@ type Command struct {
 
 // Host represents a monitored machine
 type Host struct {
-	ID           string   `yaml:"id" json:"id"`
-	Use          string   `yaml:"use" json:"use"`           // Template reference
-	Address      string   `yaml:"address" json:"address"`
-	CheckCommand string   `yaml:"check_command" json:"check_command"`
-	Alias        string   `yaml:"alias" json:"alias"`
-	Contacts     []string `yaml:"contacts" json:"contacts"`
-	HostGroups   []string `yaml:"hostgroups" json:"hostgroups"`
-	Register     *bool    `yaml:"register" json:"register"` // false = template only
+	ID           string            `yaml:"id" json:"id"`
+	Use          string            `yaml:"use" json:"use"`           // Template reference
+	Address      string            `yaml:"address" json:"address"`
+	CheckCommand string            `yaml:"check_command" json:"check_command"`
+	Alias        string            `yaml:"alias" json:"alias"`
+	Contacts     []string          `yaml:"contacts" json:"contacts"`
+	HostGroups   []string          `yaml:"hostgroups" json:"hostgroups"`
+	Macros       map[string]string `yaml:"macros" json:"macros"`     
+	Register     *bool             `yaml:"register" json:"register"` 
 }
 
 // Service represents a specific check bound to a host
 type Service struct {
-	ID             string   `yaml:"id" json:"id"`
-	Use            string   `yaml:"use" json:"use"`
-	HostName       string   `yaml:"host_name" json:"host_name"`
-	CheckCommand   string   `yaml:"check_command" json:"check_command"`
-	NormalInterval int      `yaml:"normal_interval" json:"normal_interval"`
-	RetryInterval  int      `yaml:"retry_interval" json:"retry_interval"`
-	MaxAttempts    int      `yaml:"max_attempts" json:"max_attempts"`
-	Contacts       []string `yaml:"contacts" json:"contacts"`
-	ServiceGroups  []string `yaml:"servicegroups" json:"servicegroups"`
-	Register       *bool    `yaml:"register" json:"register"`
+	ID             string            `yaml:"id" json:"id"`
+	Use            string            `yaml:"use" json:"use"`           
+	HostName       string            `yaml:"host_name" json:"host_name"`
+	CheckCommand   string            `yaml:"check_command" json:"check_command"`
+	NormalInterval int               `yaml:"normal_interval" json:"normal_interval"`
+	RetryInterval  int               `yaml:"retry_interval" json:"retry_interval"`
+	MaxAttempts    int               `yaml:"max_attempts" json:"max_attempts"`
+	Contacts       []string          `yaml:"contacts" json:"contacts"`
+	ServiceGroups  []string          `yaml:"servicegroups" json:"servicegroups"`
+	Macros         map[string]string `yaml:"macros" json:"macros"`
+	Register       *bool             `yaml:"register" json:"register"`
 }
 
-// GlobalConfig is the container for exporting data to the Scheduler
+// GlobalConfig is the final payload sent to the Scheduler
 type GlobalConfig struct {
 	Commands      []Command      `yaml:"commands" json:"commands"`
 	Contacts      []Contact      `yaml:"contacts" json:"contacts"`

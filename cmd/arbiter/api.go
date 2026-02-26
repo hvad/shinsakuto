@@ -12,8 +12,9 @@ func startAPI() {
 	if port == 0 { port = 8083 }
 
 	http.HandleFunc("/status", statusHandler)
+
 	addr := fmt.Sprintf(":%d", port)
-	log.Printf("[API] Status server listening on %s", addr)
+	log.Printf("[API] Server listening on %s", addr)
 
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatalf("[API] Fatal error: %v", err)
