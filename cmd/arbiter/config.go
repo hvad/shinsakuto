@@ -3,13 +3,12 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"sync"
 	"time"
-
 	"shinsakuto/pkg/models"
 )
 
+// ArbiterLocalConfig stores the internal settings for the binary
 type ArbiterLocalConfig struct {
 	SchedulerURL   string `json:"scheduler_url"`
 	DefinitionsDir string `json:"definitions_dir"`
@@ -24,17 +23,9 @@ var (
 	syncSuccess   bool
 )
 
+// loadArbiterLocalConfig reads the config.json file
 func loadArbiterLocalConfig(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil { return err }
 	return json.Unmarshal(data, &appConfig)
-}
-
-func daemonize(configPath string) {
-	cmd := exec.Command(os.Args[0], "-config", configPath)
-	cmd.Env = append(os.Environ(), "ARBITER_DAEMON=true")
-	if err := cmd.Start(); err != nil {
-		os.Exit(1)
-	}
-	os.Exit(0)
 }

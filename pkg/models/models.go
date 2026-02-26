@@ -18,29 +18,29 @@ type ServiceGroup struct {
 	Alias string `yaml:"alias" json:"alias"`
 }
 
-// Command defines the raw command line to be executed
+// Command defines the raw executable command line
 type Command struct {
 	ID          string `yaml:"id" json:"id"`
 	CommandLine string `yaml:"command_line" json:"command_line"`
 }
 
-// Host represents a monitored machine
+// Host represents a monitored machine with template support
 type Host struct {
 	ID           string            `yaml:"id" json:"id"`
-	Use          string            `yaml:"use" json:"use"`           // Template reference
+	Use          string            `yaml:"use" json:"use"`           
 	Address      string            `yaml:"address" json:"address"`
 	CheckCommand string            `yaml:"check_command" json:"check_command"`
 	Alias        string            `yaml:"alias" json:"alias"`
 	Contacts     []string          `yaml:"contacts" json:"contacts"`
 	HostGroups   []string          `yaml:"hostgroups" json:"hostgroups"`
-	Macros       map[string]string `yaml:"macros" json:"macros"`     
-	Register     *bool             `yaml:"register" json:"register"` 
+	Macros       map[string]string `yaml:"macros" json:"macros"`
+	Register     *bool             `yaml:"register" json:"register"`
 }
 
-// Service represents a specific check bound to a host
+// Service represents a specific check with template support
 type Service struct {
 	ID             string            `yaml:"id" json:"id"`
-	Use            string            `yaml:"use" json:"use"`           
+	Use            string            `yaml:"use" json:"use"`
 	HostName       string            `yaml:"host_name" json:"host_name"`
 	CheckCommand   string            `yaml:"check_command" json:"check_command"`
 	NormalInterval int               `yaml:"normal_interval" json:"normal_interval"`
