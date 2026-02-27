@@ -1,6 +1,19 @@
 package models
 
-// TimePeriod defines a weekly schedule for checks or notifications
+import "time"
+
+// Downtime defines a maintenance window for a host or a service
+type Downtime struct {
+	ID        string    `yaml:"id" json:"id"`
+	HostName  string    `yaml:"host_name" json:"host_name"`
+	ServiceID string    `yaml:"service_id" json:"service_id"` // Optional: if empty, it's a host-wide downtime
+	StartTime time.Time `yaml:"start_time" json:"start_time"`
+	EndTime   time.Time `yaml:"end_time" json:"end_time"`
+	Author    string    `yaml:"author" json:"author"`
+	Comment   string    `yaml:"comment" json:"comment"`
+}
+
+// TimePeriod defines weekly time ranges for checks or notifications
 type TimePeriod struct {
 	ID        string   `yaml:"id" json:"id"`
 	Alias     string   `yaml:"alias" json:"alias"`
@@ -13,13 +26,13 @@ type TimePeriod struct {
 	Sunday    []string `yaml:"sunday" json:"sunday"`
 }
 
-// Contact defines alert recipients
+// Contact represents an alert recipient
 type Contact struct {
 	ID    string `yaml:"id" json:"id"`
 	Email string `yaml:"email" json:"email"`
 }
 
-// HostGroup and ServiceGroup for logical grouping
+// HostGroup and ServiceGroup for organizational grouping
 type HostGroup struct {
 	ID    string `yaml:"id" json:"id"`
 	Alias string `yaml:"alias" json:"alias"`
@@ -30,13 +43,13 @@ type ServiceGroup struct {
 	Alias string `yaml:"alias" json:"alias"`
 }
 
-// Command defines the executable line
+// Command represents the check execution logic
 type Command struct {
 	ID          string `yaml:"id" json:"id"`
 	CommandLine string `yaml:"command_line" json:"command_line"`
 }
 
-// Host with template and networking properties
+// Host defines a monitored machine
 type Host struct {
 	ID                 string            `yaml:"id" json:"id"`
 	Use                string            `yaml:"use" json:"use"`
@@ -49,9 +62,10 @@ type Host struct {
 	HostGroups         []string          `yaml:"hostgroups" json:"hostgroups"`
 	Macros             map[string]string `yaml:"macros" json:"macros"`
 	Register           *bool             `yaml:"register" json:"register"`
+	InDowntime         bool              `json:"in_downtime"`
 }
 
-// Service associated with a host
+// Service defines a check performed on a Host
 type Service struct {
 	ID                 string            `yaml:"id" json:"id"`
 	Use                string            `yaml:"use" json:"use"`
@@ -66,15 +80,17 @@ type Service struct {
 	ServiceGroups      []string          `yaml:"servicegroups" json:"servicegroups"`
 	Macros             map[string]string `yaml:"macros" json:"macros"`
 	Register           *bool             `yaml:"register" json:"register"`
+	InDowntime         bool              `json:"in_downtime"`
 }
 
-// GlobalConfig is the final payload for the Scheduler
+// GlobalConfig is the final payload sent from Arbiter to Scheduler
 type GlobalConfig struct {
-	Commands      []Command      `yaml:"commands" json:"commands"`
-	Contacts      []Contact      `yaml:"contacts" json:"contacts"`
-	TimePeriods   []TimePeriod   `yaml:"timeperiods" json:"timeperiods"`
-	HostGroups    []HostGroup    `yaml:"hostgroups" json:"hostgroups"`
-	ServiceGroups []ServiceGroup `yaml:"servicegroups" json:"servicegroups"`
-	Hosts         []Host         `yaml:"hosts" json:"hosts"`
-	Services      []Service      `yaml:"services" json:"services"`
+	Commands      []Command      `json:"commands"`
+	Contacts      []Contact      `json:"contacts"`
+	TimePeriods   []TimePeriod   `json:"timeperiods"`
+	HostGroups    []HostGroup    `json:"hostgroups"`
+	ServiceGroups []ServiceGroup `json:"servicegroups"`
+	Hosts         []Host         `json:"hosts"`
+	Services      []Service      `json:"services"`
+	Downtimes     []Downtime     `json:"downtimes"`
 }
