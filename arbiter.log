@@ -1,0 +1,24 @@
+2026/02/27 08:42:29 shinsakuto Arbiter starting (PID 82943)
+2026/02/27 08:42:29 [Watcher] Monitoring directory: ./examples
+2026/02/27 08:42:29 [API] Status server listening on 0.0.0.0:9090
+2026/02/27 08:42:29 [Watcher] Sync failed to http://127.0.0.1:8081/sync-all
+2026/02/27 08:42:59 [Watcher] Sync failed to http://127.0.0.1:8081/sync-all
+2026/02/27 08:49:47 shinsakuto Arbiter starting (PID 93828)
+2026/02/27 08:49:47 [Watcher] Monitoring directory: ./examples
+2026/02/27 08:49:47 [API] Status server listening on 0.0.0.0:9090
+2026/02/27 08:49:47 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
+2026/02/27 08:50:05 shinsakuto Arbiter starting (PID 94756)
+2026/02/27 08:50:05 [API] Status server listening on 0.0.0.0:9090
+2026/02/27 08:50:05 [Watcher] Monitoring directory: ./examples
+2026/02/27 08:50:05 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
+2026/02/27 08:50:35 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
+2026/02/27 08:51:05 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
+2026/02/27 08:51:35 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
+2026/02/27 08:52:05 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
+2026/02/27 08:52:35 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
+2026/02/27 08:53:05 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
+2026/02/27 08:53:35 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
+2026/02/27 08:54:05 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
+2026/02/27 08:54:35 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
+2026/02/27 09:05:22 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
+2026/02/27 09:05:52 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable

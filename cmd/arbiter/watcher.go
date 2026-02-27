@@ -15,7 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// startWatcher runs a loop to periodically reload configuration
+// startWatcher runs a loop that periodically reloads the configuration
 func startWatcher() {
 	log.Printf("[Watcher] Monitoring directory: %s", appConfig.DefinitionsDir)
 	for {
@@ -24,10 +24,11 @@ func startWatcher() {
 	}
 }
 
-// loadAndValidateAll reads all YAML files, applies inheritance, and validates integrity
+// loadAndValidateAll discovers YAML files, processes inheritance, and runs integrity checks
 func loadAndValidateAll() (*models.GlobalConfig, error) {
 	finalCfg := &models.GlobalConfig{}
-
+	
+	// Traverse the directory to find and merge all YAML files
 	err := filepath.Walk(appConfig.DefinitionsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil { return err }
 		if !info.IsDir() && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
@@ -37,42 +38,56 @@ func loadAndValidateAll() (*models.GlobalConfig, error) {
 	})
 	if err != nil { return nil, err }
 
+	// Resolve template logic (inheritance)
 	processedCfg := processInheritance(finalCfg)
+	
+	// Perform cross-referential integrity checks
 	if err := performCrossValidation(processedCfg); err != nil { return nil, err }
-
+	
 	return processedCfg, nil
 }
 
-// performCrossValidation checks for broken references between objects
+// performCrossValidation ensures that IDs referenced (Commands, Periods, Hosts) actually exist
 func performCrossValidation(cfg *models.GlobalConfig) error {
 	commands := make(map[string]bool)
 	for _, c := range cfg.Commands { commands[c.ID] = true }
-
-	contacts := make(map[string]bool)
-	for _, c := range cfg.Contacts { contacts[c.ID] = true }
-
+	
+	periods := make(map[string]bool)
+	for _, p := range cfg.TimePeriods { periods[p.ID] = true }
+	
 	hosts := make(map[string]bool)
 	for _, h := range cfg.Hosts {
 		hosts[h.ID] = true
-		baseCmd := strings.Split(h.CheckCommand, "!")[0]
-		if h.CheckCommand != "" && !commands[baseCmd] {
-			return fmt.Errorf("host '%s' uses undefined command '%s'", h.ID, baseCmd)
+		// Validate Host Check Command
+		if h.CheckCommand != "" {
+			cmdID := strings.Split(h.CheckCommand, "!")[0]
+			if !commands[cmdID] {
+				return fmt.Errorf("host '%s' uses undefined command '%s'", h.ID, cmdID)
+			}
+		}
+		// Validate Host TimePeriod
+		if h.CheckPeriod != "" && !periods[h.CheckPeriod] {
+			return fmt.Errorf("host '%s' uses undefined check_period '%s'", h.ID, h.CheckPeriod)
 		}
 	}
 
 	for _, s := range cfg.Services {
+		// Ensure service belongs to a valid host
 		if !hosts[s.HostName] {
-			return fmt.Errorf("service '%s' bound to unknown host '%s'", s.ID, s.HostName)
+			return fmt.Errorf("service '%s' refers to unknown host '%s'", s.ID, s.HostName)
 		}
-		baseCmd := strings.Split(s.CheckCommand, "!")[0]
-		if s.CheckCommand != "" && !commands[baseCmd] {
-			return fmt.Errorf("service '%s' uses undefined command '%s'", s.ID, baseCmd)
+		// Validate Service Check Command
+		if s.CheckCommand != "" {
+			cmdID := strings.Split(s.CheckCommand, "!")[0]
+			if !commands[cmdID] {
+				return fmt.Errorf("service '%s' uses undefined command '%s'", s.ID, cmdID)
+			}
 		}
 	}
 	return nil
 }
 
-// mergeFileToConfig unmarshals a single file into the global buffer
+// mergeFileToConfig unmarshals YAML content into the temporary GlobalConfig object
 func mergeFileToConfig(path string, target *models.GlobalConfig) error {
 	data, err := os.ReadFile(path)
 	if err != nil { return err }
@@ -82,16 +97,17 @@ func mergeFileToConfig(path string, target *models.GlobalConfig) error {
 	}
 	target.Commands = append(target.Commands, temp.Commands...)
 	target.Contacts = append(target.Contacts, temp.Contacts...)
-	target.Hosts = append(target.Hosts, temp.Hosts...)
-	target.Services = append(target.Services, temp.Services...)
+	target.TimePeriods = append(target.TimePeriods, temp.TimePeriods...)
 	target.HostGroups = append(target.HostGroups, temp.HostGroups...)
 	target.ServiceGroups = append(target.ServiceGroups, temp.ServiceGroups...)
+	target.Hosts = append(target.Hosts, temp.Hosts...)
+	target.Services = append(target.Services, temp.Services...)
 	return nil
 }
 
-// processInheritance applies properties from templates to registered objects
+// processInheritance copies attributes from templates (register=false) to active objects
 func processInheritance(cfg *models.GlobalConfig) *models.GlobalConfig {
-	// Host inheritance logic
+	// Host Template resolution
 	hTpl := make(map[string]models.Host)
 	for _, h := range cfg.Hosts {
 		if h.Register != nil && !*h.Register { hTpl[h.ID] = h }
@@ -102,40 +118,21 @@ func processInheritance(cfg *models.GlobalConfig) *models.GlobalConfig {
 			if h.Use != "" {
 				if t, ok := hTpl[h.Use]; ok {
 					if h.CheckCommand == "" { h.CheckCommand = t.CheckCommand }
-					if len(h.Contacts) == 0 { h.Contacts = t.Contacts }
+					if h.CheckPeriod == "" { h.CheckPeriod = t.CheckPeriod }
 				}
 			}
 			actHosts = append(actHosts, h)
 		}
 	}
-	// Service inheritance logic
-	sTpl := make(map[string]models.Service)
-	for _, s := range cfg.Services {
-		if s.Register != nil && !*s.Register { sTpl[s.ID] = s }
-	}
-	var actSvc []models.Service
-	for _, s := range cfg.Services {
-		if s.Register == nil || *s.Register {
-			if s.Use != "" {
-				if t, ok := sTpl[s.Use]; ok {
-					if s.NormalInterval == 0 { s.NormalInterval = t.NormalInterval }
-					if s.RetryInterval == 0 { s.RetryInterval = t.RetryInterval }
-					if s.MaxAttempts == 0 { s.MaxAttempts = t.MaxAttempts }
-				}
-			}
-			actSvc = append(actSvc, s)
-		}
-	}
 	cfg.Hosts = actHosts
-	cfg.Services = actSvc
 	return cfg
 }
 
-// refreshConfig triggers re-loading and sends it to the Scheduler
+// refreshConfig reloads the disk configuration and pushes it to the Scheduler
 func refreshConfig() {
 	cfg, err := loadAndValidateAll()
 	if err != nil {
-		log.Printf("[Watcher] Validation failed: %v", err)
+		log.Printf("[Watcher] Configuration error: %v", err)
 		syncSuccess = false
 		return
 	}
@@ -149,10 +146,11 @@ func refreshConfig() {
 	if err == nil && resp.StatusCode == 200 {
 		lastSyncTime = time.Now()
 		syncSuccess = true
-		log.Printf("[Watcher] Successfully synced %d hosts and %d services", len(cfg.Hosts), len(cfg.Services))
+		log.Printf("[Watcher] Successfully synced %d objects with Scheduler", 
+			len(cfg.Hosts)+len(cfg.Services))
 		resp.Body.Close()
 	} else {
 		syncSuccess = false
-		log.Printf("[Watcher] Sync failed to %s", url)
+		log.Printf("[Watcher] Sync failed: Scheduler at %s is unreachable", url)
 	}
 }

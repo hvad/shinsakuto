@@ -7,30 +7,38 @@ import (
 	"net/http"
 )
 
-// startAPI initializes the status server
+// startAPI starts the HTTP server on the configured address and port
 func startAPI() {
 	port := appConfig.APIPort
 	if port == 0 { port = 8083 }
+	addr := fmt.Sprintf("%s:%d", appConfig.APIAddress, port)
+	
 	http.HandleFunc("/status", statusHandler)
-	addr := fmt.Sprintf(":%d", port)
 	log.Printf("[API] Status server listening on %s", addr)
-	http.ListenAndServe(addr, nil)
+	
+	if err := http.ListenAndServe(addr, nil); err != nil {
+		log.Fatalf("[API] Fatal error: %v", err)
+	}
 }
 
-// statusHandler returns a JSON report of the current Arbiter state
+// statusHandler returns a full JSON report of currently loaded objects and sync status
 func statusHandler(w http.ResponseWriter, r *http.Request) {
 	configMutex.RLock()
 	defer configMutex.RUnlock()
+	
 	res := map[string]interface{}{
-		"project": "shinsakuto",
-		"component": "arbiter",
+		"project":     "shinsakuto",
+		"component":   "arbiter",
 		"sync_status": syncSuccess,
-		"last_sync": lastSyncTime.Format("15:04:05"),
+		"last_sync":   lastSyncTime.Format("2006-01-02 15:04:05"),
 		"inventory": map[string]int{
-			"hosts":    len(currentConfig.Hosts),
-			"services": len(currentConfig.Services),
-			"commands": len(currentConfig.Commands),
-			"contacts": len(currentConfig.Contacts),
+			"hosts":          len(currentConfig.Hosts),
+			"services":       len(currentConfig.Services),
+			"commands":       len(currentConfig.Commands),
+			"contacts":       len(currentConfig.Contacts),
+			"time_periods":   len(currentConfig.TimePeriods),
+			"host_groups":    len(currentConfig.HostGroups),
+			"service_groups": len(currentConfig.ServiceGroups),
 		},
 	}
 	w.Header().Set("Content-Type", "application/json")

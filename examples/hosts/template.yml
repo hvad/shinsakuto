@@ -2,5 +2,7 @@ hosts:
   - id: linux-server-template
     register: false 
     check_command: check_ping
+    check_period: "24x7"
+    notification_period: "workhours"
     contacts:
       - admin

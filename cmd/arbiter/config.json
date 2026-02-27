@@ -1,5 +1,7 @@
 {
   "scheduler_url": "http://127.0.0.1:8081",
   "definitions_dir": "./examples",
-  "api_port": 9090
+  "api_address": "0.0.0.0",
+  "api_port": 9090,
+  "log_file": "arbiter.log"
 }
