@@ -4,7 +4,7 @@
   "api_address": "0.0.0.0",
   "api_port": 8080,
   "log_file": "arbiter.log",
-  "hot_reload": false,
+  "hot_reload": true,
   "hot_reload_debounce": 5,
   "sync_interval": 300
 }
