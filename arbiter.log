@@ -22,3 +22,27 @@
 2026/02/27 08:54:35 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
 2026/02/27 09:05:22 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
 2026/02/27 09:05:52 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
+2026/02/27 12:47:45 shinsakuto Arbiter starting (PID 27456)
+2026/02/27 12:47:45 [Watcher] Monitoring directory: ./examples
+2026/02/27 12:47:45 [API] Status server listening on 0.0.0.0:9090
+2026/02/27 12:47:45 [Watcher] Sync failed
+2026/02/27 12:48:06 [Main] Signal received, stopping arbiter...
+2026/02/27 12:48:06 [API] Stopping status server...
+2026/02/27 12:48:06 [Watcher] Stopping watcher loop...
+2026/02/27 12:48:06 [Main] Arbiter stopped clean.
+2026/02/27 12:48:15 shinsakuto Arbiter starting (PID 28679)
+2026/02/27 12:48:15 [API] Status server listening on 0.0.0.0:9090
+2026/02/27 12:48:15 [Watcher] Monitoring directory: ./examples
+2026/02/27 12:48:15 [Watcher] Sync failed
+2026/02/27 12:49:00 shinsakuto Arbiter starting (PID 30112)
+2026/02/27 12:49:00 [Watcher] Monitoring directory: ./examples
+2026/02/27 12:49:00 [API] Status server listening on 0.0.0.0:9090
+2026/02/27 12:49:00 [Watcher] Sync failed
+2026/02/27 12:49:26 shinsakuto Arbiter starting (PID 31031)
+2026/02/27 12:49:26 [Watcher] Monitoring directory: ./examples
+2026/02/27 12:49:26 [API] Status server listening on 0.0.0.0:9090
+2026/02/27 12:49:26 [Watcher] Sync failed
+2026/02/27 12:49:46 [Main] Signal received, stopping arbiter...
+2026/02/27 12:49:46 [API] Stopping status server...
+2026/02/27 12:49:46 [Watcher] Stopping watcher loop...
+2026/02/27 12:49:46 [Main] Arbiter stopped clean.

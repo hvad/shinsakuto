@@ -1,27 +1,47 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 )
 
-// startAPI starts the HTTP server on the configured address and port
+var server *http.Server
+
+// startAPI runs the HTTP status server
 func startAPI() {
 	port := appConfig.APIPort
 	if port == 0 { port = 8083 }
 	addr := fmt.Sprintf("%s:%d", appConfig.APIAddress, port)
 	
-	http.HandleFunc("/status", statusHandler)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/status", statusHandler)
+
+	server = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
 	log.Printf("[API] Status server listening on %s", addr)
-	
-	if err := http.ListenAndServe(addr, nil); err != nil {
-		log.Fatalf("[API] Fatal error: %v", err)
+	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		log.Fatalf("[API] Server failed: %v", err)
 	}
 }
 
-// statusHandler returns a full JSON report of currently loaded objects and sync status
+// stopAPI shuts down the server with a 5-second timeout
+func stopAPI() {
+	log.Println("[API] Stopping status server...")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("[API] Shutdown error: %v", err)
+	}
+}
+
+// statusHandler reports inventory counts and sync state
 func statusHandler(w http.ResponseWriter, r *http.Request) {
 	configMutex.RLock()
 	defer configMutex.RUnlock()

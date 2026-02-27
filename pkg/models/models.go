@@ -1,6 +1,6 @@
 package models
 
-// TimePeriod defines a weekly schedule for checks or notifications (Nagios-style)
+// TimePeriod defines a weekly schedule for checks or notifications
 type TimePeriod struct {
 	ID        string   `yaml:"id" json:"id"`
 	Alias     string   `yaml:"alias" json:"alias"`
@@ -13,13 +13,13 @@ type TimePeriod struct {
 	Sunday    []string `yaml:"sunday" json:"sunday"`
 }
 
-// Contact defines a person or group to receive alerts
+// Contact defines alert recipients
 type Contact struct {
 	ID    string `yaml:"id" json:"id"`
 	Email string `yaml:"email" json:"email"`
 }
 
-// HostGroup and ServiceGroup allow logical clustering of objects
+// HostGroup and ServiceGroup for logical grouping
 type HostGroup struct {
 	ID    string `yaml:"id" json:"id"`
 	Alias string `yaml:"alias" json:"alias"`
@@ -30,16 +30,16 @@ type ServiceGroup struct {
 	Alias string `yaml:"alias" json:"alias"`
 }
 
-// Command represents the executable line with potential macros
+// Command defines the executable line
 type Command struct {
 	ID          string `yaml:"id" json:"id"`
 	CommandLine string `yaml:"command_line" json:"command_line"`
 }
 
-// Host represents a monitored machine with template inheritance capabilities
+// Host with template and networking properties
 type Host struct {
 	ID                 string            `yaml:"id" json:"id"`
-	Use                string            `yaml:"use" json:"use"` // Template ID to inherit from
+	Use                string            `yaml:"use" json:"use"`
 	Address            string            `yaml:"address" json:"address"`
 	CheckCommand       string            `yaml:"check_command" json:"check_command"`
 	CheckPeriod        string            `yaml:"check_period" json:"check_period"`
@@ -48,10 +48,10 @@ type Host struct {
 	Contacts           []string          `yaml:"contacts" json:"contacts"`
 	HostGroups         []string          `yaml:"hostgroups" json:"hostgroups"`
 	Macros             map[string]string `yaml:"macros" json:"macros"`
-	Register           *bool             `yaml:"register" json:"register"` // If false, object is a template
+	Register           *bool             `yaml:"register" json:"register"`
 }
 
-// Service represents a check associated with a specific Host
+// Service associated with a host
 type Service struct {
 	ID                 string            `yaml:"id" json:"id"`
 	Use                string            `yaml:"use" json:"use"`
@@ -68,7 +68,7 @@ type Service struct {
 	Register           *bool             `yaml:"register" json:"register"`
 }
 
-// GlobalConfig is the final consolidated structure sent to the Scheduler
+// GlobalConfig is the final payload for the Scheduler
 type GlobalConfig struct {
 	Commands      []Command      `yaml:"commands" json:"commands"`
 	Contacts      []Contact      `yaml:"contacts" json:"contacts"`

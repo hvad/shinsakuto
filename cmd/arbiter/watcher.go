@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -15,20 +16,27 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// startWatcher runs a loop that periodically reloads the configuration
-func startWatcher() {
+// startWatcher monitors files until context cancellation
+func startWatcher(ctx context.Context) {
 	log.Printf("[Watcher] Monitoring directory: %s", appConfig.DefinitionsDir)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		refreshConfig()
-		time.Sleep(30 * time.Second)
+		select {
+		case <-ticker.C:
+			continue
+		case <-ctx.Done():
+			log.Println("[Watcher] Stopping watcher loop...")
+			return
+		}
 	}
 }
 
-// loadAndValidateAll discovers YAML files, processes inheritance, and runs integrity checks
+// loadAndValidateAll performs a full reload and cross-validation
 func loadAndValidateAll() (*models.GlobalConfig, error) {
 	finalCfg := &models.GlobalConfig{}
-	
-	// Traverse the directory to find and merge all YAML files
 	err := filepath.Walk(appConfig.DefinitionsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil { return err }
 		if !info.IsDir() && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
@@ -38,63 +46,41 @@ func loadAndValidateAll() (*models.GlobalConfig, error) {
 	})
 	if err != nil { return nil, err }
 
-	// Resolve template logic (inheritance)
 	processedCfg := processInheritance(finalCfg)
-	
-	// Perform cross-referential integrity checks
 	if err := performCrossValidation(processedCfg); err != nil { return nil, err }
-	
 	return processedCfg, nil
 }
 
-// performCrossValidation ensures that IDs referenced (Commands, Periods, Hosts) actually exist
+// performCrossValidation checks for broken references
 func performCrossValidation(cfg *models.GlobalConfig) error {
 	commands := make(map[string]bool)
 	for _, c := range cfg.Commands { commands[c.ID] = true }
-	
 	periods := make(map[string]bool)
 	for _, p := range cfg.TimePeriods { periods[p.ID] = true }
-	
 	hosts := make(map[string]bool)
+
 	for _, h := range cfg.Hosts {
 		hosts[h.ID] = true
-		// Validate Host Check Command
-		if h.CheckCommand != "" {
-			cmdID := strings.Split(h.CheckCommand, "!")[0]
-			if !commands[cmdID] {
-				return fmt.Errorf("host '%s' uses undefined command '%s'", h.ID, cmdID)
-			}
+		if h.CheckCommand != "" && !commands[strings.Split(h.CheckCommand, "!")[0]] {
+			return fmt.Errorf("host '%s' uses undefined command", h.ID)
 		}
-		// Validate Host TimePeriod
 		if h.CheckPeriod != "" && !periods[h.CheckPeriod] {
-			return fmt.Errorf("host '%s' uses undefined check_period '%s'", h.ID, h.CheckPeriod)
+			return fmt.Errorf("host '%s' uses undefined period", h.ID)
 		}
 	}
-
 	for _, s := range cfg.Services {
-		// Ensure service belongs to a valid host
 		if !hosts[s.HostName] {
-			return fmt.Errorf("service '%s' refers to unknown host '%s'", s.ID, s.HostName)
-		}
-		// Validate Service Check Command
-		if s.CheckCommand != "" {
-			cmdID := strings.Split(s.CheckCommand, "!")[0]
-			if !commands[cmdID] {
-				return fmt.Errorf("service '%s' uses undefined command '%s'", s.ID, cmdID)
-			}
+			return fmt.Errorf("service '%s' refers to unknown host", s.ID)
 		}
 	}
 	return nil
 }
 
-// mergeFileToConfig unmarshals YAML content into the temporary GlobalConfig object
 func mergeFileToConfig(path string, target *models.GlobalConfig) error {
 	data, err := os.ReadFile(path)
 	if err != nil { return err }
 	var temp models.GlobalConfig
-	if err := yaml.Unmarshal(data, &temp); err != nil {
-		return fmt.Errorf("YAML error in %s: %v", path, err)
-	}
+	if err := yaml.Unmarshal(data, &temp); err != nil { return err }
 	target.Commands = append(target.Commands, temp.Commands...)
 	target.Contacts = append(target.Contacts, temp.Contacts...)
 	target.TimePeriods = append(target.TimePeriods, temp.TimePeriods...)
@@ -105,9 +91,7 @@ func mergeFileToConfig(path string, target *models.GlobalConfig) error {
 	return nil
 }
 
-// processInheritance copies attributes from templates (register=false) to active objects
 func processInheritance(cfg *models.GlobalConfig) *models.GlobalConfig {
-	// Host Template resolution
 	hTpl := make(map[string]models.Host)
 	for _, h := range cfg.Hosts {
 		if h.Register != nil && !*h.Register { hTpl[h.ID] = h }
@@ -128,11 +112,10 @@ func processInheritance(cfg *models.GlobalConfig) *models.GlobalConfig {
 	return cfg
 }
 
-// refreshConfig reloads the disk configuration and pushes it to the Scheduler
 func refreshConfig() {
 	cfg, err := loadAndValidateAll()
 	if err != nil {
-		log.Printf("[Watcher] Configuration error: %v", err)
+		log.Printf("[Watcher] Error: %v", err)
 		syncSuccess = false
 		return
 	}
@@ -146,11 +129,10 @@ func refreshConfig() {
 	if err == nil && resp.StatusCode == 200 {
 		lastSyncTime = time.Now()
 		syncSuccess = true
-		log.Printf("[Watcher] Successfully synced %d objects with Scheduler", 
-			len(cfg.Hosts)+len(cfg.Services))
+		log.Printf("[Watcher] Successfully synced to Scheduler")
 		resp.Body.Close()
 	} else {
 		syncSuccess = false
-		log.Printf("[Watcher] Sync failed: Scheduler at %s is unreachable", url)
+		log.Printf("[Watcher] Sync failed")
 	}
 }
