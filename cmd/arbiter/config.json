@@ -1,7 +1,10 @@
 {
-  "scheduler_url": "http://127.0.0.1:8081",
-  "definitions_dir": "./examples",
+  "scheduler_url": "http://localhost:8081",
+  "definitions_dir": "./etc/shinsakuto/conf.d",
   "api_address": "0.0.0.0",
-  "api_port": 9090,
-  "log_file": "arbiter.log"
+  "api_port": 8080,
+  "log_file": "arbiter.log",
+  "hot_reload": false,
+  "hot_reload_debounce": 5,
+  "sync_interval": 300
 }

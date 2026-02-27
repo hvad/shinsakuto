@@ -1,90 +1,31 @@
-2026/02/27 08:42:29 shinsakuto Arbiter starting (PID 82943)
-2026/02/27 08:42:29 [Watcher] Monitoring directory: ./examples
-2026/02/27 08:42:29 [API] Status server listening on 0.0.0.0:9090
-2026/02/27 08:42:29 [Watcher] Sync failed to http://127.0.0.1:8081/sync-all
-2026/02/27 08:42:59 [Watcher] Sync failed to http://127.0.0.1:8081/sync-all
-2026/02/27 08:49:47 shinsakuto Arbiter starting (PID 93828)
-2026/02/27 08:49:47 [Watcher] Monitoring directory: ./examples
-2026/02/27 08:49:47 [API] Status server listening on 0.0.0.0:9090
-2026/02/27 08:49:47 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
-2026/02/27 08:50:05 shinsakuto Arbiter starting (PID 94756)
-2026/02/27 08:50:05 [API] Status server listening on 0.0.0.0:9090
-2026/02/27 08:50:05 [Watcher] Monitoring directory: ./examples
-2026/02/27 08:50:05 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
-2026/02/27 08:50:35 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
-2026/02/27 08:51:05 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
-2026/02/27 08:51:35 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
-2026/02/27 08:52:05 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
-2026/02/27 08:52:35 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
-2026/02/27 08:53:05 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
-2026/02/27 08:53:35 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
-2026/02/27 08:54:05 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
-2026/02/27 08:54:35 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
-2026/02/27 09:05:22 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
-2026/02/27 09:05:52 [Watcher] Sync failed: Scheduler at http://127.0.0.1:8081/sync-all is unreachable
-2026/02/27 12:47:45 shinsakuto Arbiter starting (PID 27456)
-2026/02/27 12:47:45 [Watcher] Monitoring directory: ./examples
-2026/02/27 12:47:45 [API] Status server listening on 0.0.0.0:9090
-2026/02/27 12:47:45 [Watcher] Sync failed
-2026/02/27 12:48:06 [Main] Signal received, stopping arbiter...
-2026/02/27 12:48:06 [API] Stopping status server...
-2026/02/27 12:48:06 [Watcher] Stopping watcher loop...
-2026/02/27 12:48:06 [Main] Arbiter stopped clean.
-2026/02/27 12:48:15 shinsakuto Arbiter starting (PID 28679)
-2026/02/27 12:48:15 [API] Status server listening on 0.0.0.0:9090
-2026/02/27 12:48:15 [Watcher] Monitoring directory: ./examples
-2026/02/27 12:48:15 [Watcher] Sync failed
-2026/02/27 12:49:00 shinsakuto Arbiter starting (PID 30112)
-2026/02/27 12:49:00 [Watcher] Monitoring directory: ./examples
-2026/02/27 12:49:00 [API] Status server listening on 0.0.0.0:9090
-2026/02/27 12:49:00 [Watcher] Sync failed
-2026/02/27 12:49:26 shinsakuto Arbiter starting (PID 31031)
-2026/02/27 12:49:26 [Watcher] Monitoring directory: ./examples
-2026/02/27 12:49:26 [API] Status server listening on 0.0.0.0:9090
-2026/02/27 12:49:26 [Watcher] Sync failed
-2026/02/27 12:49:46 [Main] Signal received, stopping arbiter...
-2026/02/27 12:49:46 [API] Stopping status server...
-2026/02/27 12:49:46 [Watcher] Stopping watcher loop...
-2026/02/27 12:49:46 [Main] Arbiter stopped clean.
-2026/02/27 13:58:24 shinsakuto Arbiter active (PID 96387)
-2026/02/27 13:58:24 [Watcher] Monitoring: ./examples
-2026/02/27 13:58:24 [API] V1 Server listening on 0.0.0.0:9090
-2026/02/27 14:05:09 [Main] Stopping Arbiter...
-2026/02/27 14:05:09 [Main] Shutdown complete.
-2026/02/27 14:54:36 shinsakuto Arbiter operational (PID: 23703)
-2026/02/27 14:54:36 [Watcher] Monitoring directory: ./examples
-2026/02/27 14:54:36 [API] Version 1 listening on 0.0.0.0:9090
-2026/02/27 14:54:36 [Watcher] Sync failed: Post "http://127.0.0.1:8081/sync-all": dial tcp 127.0.0.1:8081: connect: connection refused
-2026/02/27 14:55:06 [Watcher] Sync failed: Post "http://127.0.0.1:8081/sync-all": dial tcp 127.0.0.1:8081: connect: connection refused
-2026/02/27 14:55:11 [Watcher] Context cancelled, stopping...
-2026/02/27 14:55:11 [Main] Signal received, stopping services...
-2026/02/27 14:55:11 [API] Shutting down...
-2026/02/27 14:55:11 [Main] Arbiter stopped clean.
-2026/02/27 15:40:25 Verifying configuration integrity...
-2026/02/27 15:40:28 Verifying configuration integrity...
-2026/02/27 15:40:34 shinsakuto Arbiter starting (PID 53265)
-2026/02/27 15:40:34 [API] Version 1 listening on 0.0.0.0:9090
-2026/02/27 15:46:42 [Main] Signal received, stopping...
-2026/02/27 16:12:30 shinsakuto Arbiter operational (PID 93899)
-2026/02/27 16:12:30 [API] Listening on 0.0.0.0:9090
-2026/02/27 16:12:30 [Watcher] Sync failed or scheduler unreachable
-2026/02/27 16:13:00 [Watcher] Sync failed or scheduler unreachable
-2026/02/27 16:13:02 [API] Shutting down gracefully...
-2026/02/27 16:13:02 Arbiter stopped.
-2026/02/27 16:26:24 shinsakuto Arbiter operational (PID 8043)
-2026/02/27 16:26:24 [API] Server listening on 0.0.0.0:9090
-2026/02/27 16:29:44 [API] Shutting down server...
-2026/02/27 16:29:44 Arbiter stopped.
-2026/02/27 16:32:07 shinsakuto Arbiter operational (PID 14721)
-2026/02/27 16:32:07 [Watcher] Refreshing configuration...
-2026/02/27 16:32:07 [API] Server listening on 0.0.0.0:9090
-2026/02/27 16:32:07 [Watcher] Failed to reach Scheduler at http://127.0.0.1:8081/v1/sync-all: Post "http://127.0.0.1:8081/v1/sync-all": dial tcp 127.0.0.1:8081: connect: connection refused
-2026/02/27 16:32:36 [API] Shutting down server...
-2026/02/27 16:32:36 [Watcher] Stopping configuration watcher...
-2026/02/27 16:32:36 Arbiter stopped.
-2026/02/27 16:32:40 shinsakuto Arbiter operational (PID 15816)
-2026/02/27 16:32:40 [Watcher] Refreshing configuration...
-2026/02/27 16:32:40 [API] Server listening on 0.0.0.0:9090
-2026/02/27 16:32:40 [Watcher] Failed to reach Scheduler at http://127.0.0.1:8081/v1/sync-all: Post "http://127.0.0.1:8081/v1/sync-all": dial tcp 127.0.0.1:8081: connect: connection refused
-2026/02/27 16:33:10 [Watcher] Refreshing configuration...
-2026/02/27 16:33:10 [Watcher] Failed to reach Scheduler at http://127.0.0.1:8081/v1/sync-all: Post "http://127.0.0.1:8081/v1/sync-all": dial tcp 127.0.0.1:8081: connect: connection refused
+2026/02/27 22:12:38 shinsakuto Arbiter operational (PID 70741)
+2026/02/27 22:12:38 [API] Server listening on 0.0.0.0:8080
+2026/02/27 22:12:38 [Watcher] CRITICAL: Scheduler unreachable at http://localhost:8081/v1/sync-all: Post "http://localhost:8081/v1/sync-all": dial tcp [::1]:8081: connect: connection refused
+2026/02/27 22:13:08 [Watcher] Periodic sync triggered
+2026/02/27 22:13:08 [Watcher] CRITICAL: Scheduler unreachable at http://localhost:8081/v1/sync-all: Post "http://localhost:8081/v1/sync-all": dial tcp [::1]:8081: connect: connection refused
+2026/02/27 22:13:38 [Watcher] Periodic sync triggered
+2026/02/27 22:13:38 [Watcher] CRITICAL: Scheduler unreachable at http://localhost:8081/v1/sync-all: Post "http://localhost:8081/v1/sync-all": dial tcp [::1]:8081: connect: connection refused
+2026/02/27 22:13:52 [Watcher] Hot Reload triggered by change in: etc/shinsakuto/conf.d/hosts/svr1.yml
+2026/02/27 22:13:52 [Watcher] CRITICAL: Scheduler unreachable at http://localhost:8081/v1/sync-all: Post "http://localhost:8081/v1/sync-all": dial tcp [::1]:8081: connect: connection refused
+2026/02/27 22:14:03 [API] Shutting down...
+2026/02/27 22:14:03 Arbiter stopped.
+2026/02/27 22:14:37 shinsakuto Arbiter operational (PID 73993)
+2026/02/27 22:14:37 [API] Server listening on 0.0.0.0:8080
+2026/02/27 22:14:37 [Watcher] CRITICAL: Scheduler unreachable at http://localhost:8081/v1/sync-all: Post "http://localhost:8081/v1/sync-all": dial tcp [::1]:8081: connect: connection refused
+2026/02/27 22:15:00 [API] Shutting down...
+2026/02/27 22:15:00 Arbiter stopped.
+2026/02/27 22:15:04 shinsakuto Arbiter operational (PID 75202)
+2026/02/27 22:15:04 [API] Server listening on 0.0.0.0:8080
+2026/02/27 22:15:04 [Watcher] CRITICAL: Scheduler unreachable at http://localhost:8081/v1/sync-all: Post "http://localhost:8081/v1/sync-all": dial tcp [::1]:8081: connect: connection refused
+2026/02/27 22:15:15 [API] Shutting down...
+2026/02/27 22:15:15 Arbiter stopped.
+2026/02/27 22:17:38 shinsakuto Arbiter operational (PID 78768)
+2026/02/27 22:17:38 [API] Server listening on 0.0.0.0:8080
+2026/02/27 22:17:38 [Watcher] CRITICAL: Scheduler unreachable at http://localhost:8081/v1/sync-all: Post "http://localhost:8081/v1/sync-all": dial tcp [::1]:8081: connect: connection refused
+2026/02/27 22:17:41 [Watcher] CRITICAL: Scheduler unreachable at http://localhost:8081/v1/sync-all: Post "http://localhost:8081/v1/sync-all": dial tcp [::1]:8081: connect: connection refused
+2026/02/27 22:18:08 [Watcher] Periodic sync triggered
+2026/02/27 22:18:08 [Watcher] CRITICAL: Scheduler unreachable at http://localhost:8081/v1/sync-all: Post "http://localhost:8081/v1/sync-all": dial tcp [::1]:8081: connect: connection refused
+2026/02/27 22:18:38 [Watcher] Periodic sync triggered
+2026/02/27 22:18:38 [Watcher] CRITICAL: Scheduler unreachable at http://localhost:8081/v1/sync-all: Post "http://localhost:8081/v1/sync-all": dial tcp [::1]:8081: connect: connection refused
+2026/02/27 22:18:54 [API] Shutting down...
+2026/02/27 22:18:54 Arbiter stopped.

@@ -18,3 +18,5 @@ execute them via the system shell.
 * **Reactionner**: The "Voice." A passive listener that waits for the Scheduler to send 
 notification requests (alerts or recoveries).
 
+
+

@@ -1,15 +1,20 @@
 hosts:
-  - id: localhost
+  - id: srv1
     use: linux-server-template
     register: true
     address: 127.0.0.1
-    alias: Local Machine Monitoring
+    alias: srv1
     hostgroups:
       - linux-servers
-
 services:
   - id: HTTP_Check
-    host_name: localhost
+    host_name: srv1
+    check_command: check_http
+    normal_interval: 60
+    retry_interval: 20
+    max_attempts: 3
+  - id: HTTPS_Check
+    host_name: srv1
     check_command: check_http
     normal_interval: 60
     retry_interval: 20

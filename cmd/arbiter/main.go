@@ -20,15 +20,17 @@ func main() {
 	// 1. Daemonization
 	if *daemonMode {
 		args := os.Args[1:]
-		cleanArgs := []string{}
+		var cleanArgs []string
 		for _, a := range args { if a != "-d" { cleanArgs = append(cleanArgs, a) } }
 		cmd := exec.Command(os.Args[0], cleanArgs...)
-		cmd.Start()
+		if err := cmd.Start(); err != nil {
+			log.Fatalf("Failed to daemonize: %v", err)
+		}
 		fmt.Printf("Arbiter daemonized (PID %d)\n", cmd.Process.Pid)
 		os.Exit(0)
 	}
 
-	// 2. Initial Setup
+	// 2. Initial Config Load
 	if err := loadArbiterLocalConfig(*configPath); err != nil {
 		log.Fatalf("Critical error during config load: %v", err)
 	}
@@ -45,7 +47,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	// 4. Signal Listening for Graceful Stop
+	// 4. Runtime logic with Graceful Stop
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

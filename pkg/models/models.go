@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-// Downtime represents a scheduled maintenance window
+// Downtime represents a scheduled maintenance period
 type Downtime struct {
 	ID        string    `json:"id"`
 	HostName  string    `json:"host_name"`
@@ -13,12 +13,12 @@ type Downtime struct {
 	Comment   string    `json:"comment"`
 }
 
-// TimePeriod defines weekly time ranges for checks or notifications
+// TimePeriod defines weekly time ranges
 type TimePeriod struct {
-	ID        string   `yaml:"id" json:"id"`
-	Register  *bool    `yaml:"register" json:"register"` 
-	Monday    []string `yaml:"monday" json:"monday"`
-	Tuesday   []string `yaml:"tuesday" json:"tuesday"`
+	ID       string   `yaml:"id" json:"id"`
+	Register *bool    `yaml:"register" json:"register"` 
+	Monday   []string `yaml:"monday" json:"monday"`
+	Tuesday  []string `yaml:"tuesday" json:"tuesday"`
 	Wednesday []string `yaml:"wednesday" json:"wednesday"`
 	Thursday  []string `yaml:"thursday" json:"thursday"`
 	Friday    []string `yaml:"friday" json:"friday"`
@@ -26,20 +26,20 @@ type TimePeriod struct {
 	Sunday    []string `yaml:"sunday" json:"sunday"`
 }
 
-// Contact defines an alert recipient
+// Contact defines alert recipients
 type Contact struct {
 	ID       string `yaml:"id" json:"id"`
 	Register *bool  `yaml:"register" json:"register"` 
 	Email    string `yaml:"email" json:"email"`
 }
 
-// Command defines the execution logic for checks
+// Command defines the check execution string
 type Command struct {
 	ID          string `yaml:"id" json:"id"`
 	CommandLine string `yaml:"command_line" json:"command_line"`
 }
 
-// Host represents a monitored machine or a template
+// Host represents a monitored machine or template
 type Host struct {
 	ID           string   `yaml:"id" json:"id"`
 	Use          string   `yaml:"use" json:"use"` 
@@ -48,10 +48,10 @@ type Host struct {
 	CheckPeriod  string   `yaml:"check_period" json:"check_period"`
 	Contacts     []string `yaml:"contacts" json:"contacts"`
 	Register     *bool    `yaml:"register" json:"register"` 
-	InDowntime   bool     `json:"in_downtime"`             
+	InDowntime   bool     `json:"in_downtime"`
 }
 
-// Service represents a specific check bound to a host
+// Service represents a specific check linked to a host
 type Service struct {
 	ID           string   `yaml:"id" json:"id"`
 	Use          string   `yaml:"use" json:"use"` 
@@ -60,10 +60,10 @@ type Service struct {
 	CheckPeriod  string   `yaml:"check_period" json:"check_period"`
 	Contacts     []string `yaml:"contacts" json:"contacts"`
 	Register     *bool    `yaml:"register" json:"register"` 
-	InDowntime   bool     `json:"in_downtime"`             
+	InDowntime   bool     `json:"in_downtime"`
 }
 
-// GlobalConfig is the final payload pushed to the Scheduler
+// GlobalConfig is the final payload sent to the Scheduler
 type GlobalConfig struct {
 	Commands    []Command    `json:"commands"`
 	Contacts    []Contact    `json:"contacts"`
