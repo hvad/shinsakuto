@@ -10,7 +10,7 @@ import (
 	"shinsakuto/pkg/models"
 )
 
-// ArbiterLocalConfig represents the settings for the Arbiter itself
+// ArbiterLocalConfig stores internal process settings
 type ArbiterLocalConfig struct {
 	SchedulerURL   string `json:"scheduler_url"`
 	DefinitionsDir string `json:"definitions_dir"`
@@ -22,24 +22,23 @@ type ArbiterLocalConfig struct {
 var (
 	appConfig     ArbiterLocalConfig
 	currentConfig models.GlobalConfig
-	downtimes     []models.Downtime // Memory storage for maintenance windows
-	configMutex   sync.RWMutex      // Thread-safety for global objects
+	downtimes     []models.Downtime // Memory-based storage for downtimes
+	configMutex   sync.RWMutex      // Protects currentConfig and downtimes
 	lastSyncTime  time.Time
 	syncSuccess   bool
 )
 
-// loadArbiterLocalConfig initializes the application settings
+// loadArbiterLocalConfig reads the JSON config and initializes dual logging
 func loadArbiterLocalConfig(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil { return err }
 	if err := json.Unmarshal(data, &appConfig); err != nil { return err }
 
-	// Setup dual-logging to file and console
 	if appConfig.LogFile != "" {
 		f, err := os.OpenFile(appConfig.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 		if err != nil { return err }
-		mw := io.MultiWriter(os.Stdout, f)
-		log.SetOutput(mw)
+		// Logs both to stdout and the specified log file
+		log.SetOutput(io.MultiWriter(os.Stdout, f))
 	}
 	return nil
 }

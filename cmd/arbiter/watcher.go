@@ -16,185 +16,239 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// startWatcher initializes the monitoring loop with a ticker
+// Global HTTP client with timeout to prevent the watcher from hanging
+var httpClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
+
+// startWatcher runs the infinite loop for configuration synchronization
 func startWatcher(ctx context.Context) {
-	log.Printf("[Watcher] Monitoring directory: %s", appConfig.DefinitionsDir)
+	// Immediate first run
+	refreshConfig()
+
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
-		refreshConfig()
 		select {
 		case <-ticker.C:
-			continue
+			refreshConfig()
 		case <-ctx.Done():
-			log.Println("[Watcher] Context cancelled, stopping...")
+			log.Println("[Watcher] Stopping configuration watcher...")
 			return
 		}
 	}
 }
 
-// loadAndValidateAll parses YAML files and runs integrity checks
+// isRegistered helper to handle the default 'true' value for Register field
+func isRegistered(reg *bool) bool {
+	if reg == nil {
+		return true // Default behavior: if not specified, it's an active object
+	}
+	return *reg
+}
+
+// loadAndValidateAll crawls the directory, parses YAMLs and handles inheritance
 func loadAndValidateAll() (*models.GlobalConfig, error) {
-	finalCfg := &models.GlobalConfig{}
+	raw := &models.GlobalConfig{}
+
+	// Walk through the definitions directory to find YAML files
 	err := filepath.Walk(appConfig.DefinitionsDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		if !info.IsDir() && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
-			if err := mergeFileToConfig(path, finalCfg); err != nil { return err }
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("error reading file %s: %v", path, err)
+			}
+
+			var temp models.GlobalConfig
+			if err := yaml.Unmarshal(data, &temp); err != nil {
+				return fmt.Errorf("YAML error in %s: %v", path, err)
+			}
+
+			// Aggregate all definitions
+			raw.Commands = append(raw.Commands, temp.Commands...)
+			raw.Contacts = append(raw.Contacts, temp.Contacts...)
+			raw.TimePeriods = append(raw.TimePeriods, temp.TimePeriods...)
+			raw.Hosts = append(raw.Hosts, temp.Hosts...)
+			raw.Services = append(raw.Services, temp.Services...)
 		}
 		return nil
 	})
-	if err != nil { return nil, err }
 
-	// Resolve templates and inheritance
-	processedCfg := processInheritance(finalCfg)
-	
-	// Perform cross-object validation (commands, periods, contacts...)
-	if err := performDeepValidation(processedCfg); err != nil { return nil, err }
-	
-	return processedCfg, nil
+	if err != nil {
+		return nil, err
+	}
+
+	// 1. Filter active objects and handle template inheritance
+	final := processRegistryAndInheritance(raw)
+
+	// 2. Perform cross-reference validation (e.g., Service -> Host existence)
+	if err := performFullValidation(final); err != nil {
+		return nil, err
+	}
+
+	return final, nil
 }
 
-// performDeepValidation ensures all references between objects are valid
-func performDeepValidation(cfg *models.GlobalConfig) error {
-	// Map existing objects for O(1) lookup during cross-validation
-	commands := make(map[string]bool)
-	for _, c := range cfg.Commands { 
-		if c.ID == "" { return fmt.Errorf("found command with empty ID") }
-		commands[c.ID] = true 
+// processRegistryAndInheritance separates templates (register: false) from active objects
+func processRegistryAndInheritance(raw *models.GlobalConfig) *models.GlobalConfig {
+	hTpl := make(map[string]models.Host)
+	sTpl := make(map[string]models.Service)
+	final := &models.GlobalConfig{Commands: raw.Commands}
+
+	// Filter Contacts and TimePeriods (they don't support inheritance here, just registration)
+	for _, c := range raw.Contacts {
+		if isRegistered(c.Register) {
+			final.Contacts = append(final.Contacts, c)
+		}
+	}
+	for _, p := range raw.TimePeriods {
+		if isRegistered(p.Register) {
+			final.TimePeriods = append(final.TimePeriods, p)
+		}
 	}
 
-	periods := make(map[string]bool)
-	for _, p := range cfg.TimePeriods { 
-		if p.ID == "" { return fmt.Errorf("found timeperiod with empty ID") }
-		periods[p.ID] = true 
+	// Step A: Collect all Templates (register: false)
+	for _, h := range raw.Hosts {
+		if !isRegistered(h.Register) {
+			hTpl[h.ID] = h
+		}
+	}
+	for _, s := range raw.Services {
+		if !isRegistered(s.Register) {
+			sTpl[s.ID] = s
+		}
 	}
 
-	contacts := make(map[string]bool)
-	for _, c := range cfg.Contacts { 
-		if c.ID == "" { return fmt.Errorf("found contact with empty ID") }
-		contacts[c.ID] = true 
+	// Step B: Process Active Hosts and apply 'use' inheritance
+	for _, h := range raw.Hosts {
+		if isRegistered(h.Register) {
+			if h.Use != "" {
+				if t, ok := hTpl[h.Use]; ok {
+					// Inherit fields if they are empty in the child
+					if h.CheckCommand == "" { h.CheckCommand = t.CheckCommand }
+					if h.CheckPeriod == "" { h.CheckPeriod = t.CheckPeriod }
+					if len(h.Contacts) == 0 { h.Contacts = t.Contacts }
+					if h.Address == "" { h.Address = t.Address }
+				}
+			}
+			final.Hosts = append(final.Hosts, h)
+		}
 	}
 
-	hosts := make(map[string]bool)
+	// Step C: Process Active Services and apply inheritance
+	for _, s := range raw.Services {
+		if isRegistered(s.Register) {
+			if s.Use != "" {
+				if t, ok := sTpl[s.Use]; ok {
+					if s.CheckCommand == "" { s.CheckCommand = t.CheckCommand }
+					if s.CheckPeriod == "" { s.CheckPeriod = t.CheckPeriod }
+					if len(s.Contacts) == 0 { s.Contacts = t.Contacts }
+				}
+			}
+			final.Services = append(final.Services, s)
+		}
+	}
+
+	return final
+}
+
+// performFullValidation ensures the configuration logic is sound
+func performFullValidation(cfg *models.GlobalConfig) error {
+	hostMap := make(map[string]bool)
 	for _, h := range cfg.Hosts {
-		hosts[h.ID] = true
-		// Validate Host Check Command
-		if h.CheckCommand != "" {
-			cmdName := strings.Split(h.CheckCommand, "!")[0]
-			if !commands[cmdName] { return fmt.Errorf("host '%s' uses undefined command '%s'", h.ID, cmdName) }
-		}
-		// Validate Host Time Periods
-		if h.CheckPeriod != "" && !periods[h.CheckPeriod] { return fmt.Errorf("host '%s' uses undefined check_period '%s'", h.ID, h.CheckPeriod) }
-		if h.NotificationPeriod != "" && !periods[h.NotificationPeriod] { return fmt.Errorf("host '%s' uses undefined notification_period '%s'", h.ID, h.NotificationPeriod) }
-		
-		// Validate Host Contacts
-		for _, cName := range h.Contacts {
-			if !contacts[cName] { return fmt.Errorf("host '%s' refers to undefined contact '%s'", h.ID, cName) }
-		}
+		hostMap[h.ID] = true
 	}
 
 	for _, s := range cfg.Services {
-		if !hosts[s.HostName] { return fmt.Errorf("service '%s' refers to unknown host '%s'", s.ID, s.HostName) }
-		
-		// Validate Service Check Command
-		if s.CheckCommand != "" {
-			cmdName := strings.Split(s.CheckCommand, "!")[0]
-			if !commands[cmdName] { return fmt.Errorf("service '%s' uses undefined command '%s'", s.ID, cmdName) }
-		}
-		// Validate Service Time Periods
-		if s.CheckPeriod != "" && !periods[s.CheckPeriod] { return fmt.Errorf("service '%s' uses undefined check_period '%s'", s.ID, s.CheckPeriod) }
-		
-		// Validate Service Contacts
-		for _, cName := range s.Contacts {
-			if !contacts[cName] { return fmt.Errorf("service '%s' refers to undefined contact '%s'", s.ID, cName) }
+		if !hostMap[s.HostName] {
+			return fmt.Errorf("validation error: service '%s' references unknown or non-registered host '%s'", s.ID, s.HostName)
 		}
 	}
 	return nil
 }
 
-// refreshConfig triggers a reload and sends data to the Scheduler
+// refreshConfig triggers the full load, maintenance calculation, and push to Scheduler
 func refreshConfig() {
+	log.Println("[Watcher] Refreshing configuration...")
+
 	cfg, err := loadAndValidateAll()
 	if err != nil {
-		log.Printf("[Watcher] Validation failed: %v", err)
+		log.Printf("[Watcher] Configuration error: %v", err)
 		syncSuccess = false
 		return
 	}
 
-	// Calculate Downtime propagation logic
+	// Apply current maintenance status (Downtimes)
 	configMutex.Lock()
 	now := time.Now()
+	
+	// Track which hosts are in downtime to propagate to their services
 	hostsInDt := make(map[string]bool)
+
 	for i := range cfg.Hosts {
 		for _, d := range downtimes {
-			if d.HostName == cfg.Hosts[i].ID && d.ServiceID == "" && now.After(d.StartTime) && now.Before(d.EndTime) {
-				cfg.Hosts[i].InDowntime = true
-				hostsInDt[cfg.Hosts[i].ID] = true
+			// Check if host matches and we are within the time window
+			if d.HostName == cfg.Hosts[i].ID && d.ServiceID == "" {
+				if now.After(d.StartTime) && now.Before(d.EndTime) {
+					cfg.Hosts[i].InDowntime = true
+					hostsInDt[cfg.Hosts[i].ID] = true
+				}
 			}
 		}
 	}
+
+	// Apply downtime to services (either directly or inherited from host)
 	for i := range cfg.Services {
-		if hostsInDt[cfg.Services[i].HostName] { cfg.Services[i].InDowntime = true; continue }
+		// Inherit from host
+		if hostsInDt[cfg.Services[i].HostName] {
+			cfg.Services[i].InDowntime = true
+		}
+		// Direct service downtime
 		for _, d := range downtimes {
-			if d.HostName == cfg.Services[i].HostName && d.ServiceID == cfg.Services[i].ID && now.After(d.StartTime) && now.Before(d.EndTime) {
-				cfg.Services[i].InDowntime = true
+			if d.HostName == cfg.Services[i].HostName && d.ServiceID == cfg.Services[i].ID {
+				if now.After(d.StartTime) && now.Before(d.EndTime) {
+					cfg.Services[i].InDowntime = true
+				}
 			}
 		}
 	}
+
 	cfg.Downtimes = downtimes
 	currentConfig = *cfg
 	configMutex.Unlock()
 
-	// PUSH DATA TO SCHEDULER (The actual sync operation)
-	data, _ := json.Marshal(cfg)
-	url := strings.TrimSuffix(appConfig.SchedulerURL, "/") + "/sync-all"
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	// Push configuration to the Scheduler
+	pushToScheduler(cfg)
+}
+
+// pushToScheduler sends the final GlobalConfig to the Scheduler API
+func pushToScheduler(cfg *models.GlobalConfig) {
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		log.Printf("[Watcher] JSON Marshal error: %v", err)
+		return
+	}
+
+	url := strings.TrimSuffix(appConfig.SchedulerURL, "/") + "/v1/sync-all"
 	
-	if err == nil && resp.StatusCode == 200 {
-		lastSyncTime = time.Now()
-		syncSuccess = true
-		log.Printf("[Watcher] Successfully pushed config to Scheduler at %s", url)
-		resp.Body.Close()
-	} else {
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		log.Printf("[Watcher] Failed to reach Scheduler at %s: %v", url, err)
 		syncSuccess = false
-		log.Printf("[Watcher] Sync failed: %v", err)
+		return
 	}
-}
+	defer resp.Body.Close()
 
-// Helper to merge files and handle templates (already provided in your snippets)
-func mergeFileToConfig(path string, target *models.GlobalConfig) error {
-	data, err := os.ReadFile(path)
-	if err != nil { return err }
-	var temp models.GlobalConfig
-	if err := yaml.Unmarshal(data, &temp); err != nil { return err }
-	target.Commands = append(target.Commands, temp.Commands...)
-	target.Contacts = append(target.Contacts, temp.Contacts...)
-	target.TimePeriods = append(target.TimePeriods, temp.TimePeriods...)
-	target.HostGroups = append(target.HostGroups, temp.HostGroups...)
-	target.ServiceGroups = append(target.ServiceGroups, temp.ServiceGroups...)
-	target.Hosts = append(target.Hosts, temp.Hosts...)
-	target.Services = append(target.Services, temp.Services...)
-	return nil
-}
-
-func processInheritance(cfg *models.GlobalConfig) *models.GlobalConfig {
-	hTpl := make(map[string]models.Host)
-	for _, h := range cfg.Hosts {
-		if h.Register != nil && !*h.Register { hTpl[h.ID] = h }
+	if resp.StatusCode == http.StatusOK {
+		log.Printf("[Watcher] Successfully synced %d hosts and %d services to Scheduler", len(cfg.Hosts), len(cfg.Services))
+		syncSuccess = true
+		lastSyncTime = time.Now()
+	} else {
+		log.Printf("[Watcher] Scheduler returned error status: %d", resp.StatusCode)
+		syncSuccess = false
 	}
-	var actHosts []models.Host
-	for _, h := range cfg.Hosts {
-		if h.Register == nil || *h.Register {
-			if h.Use != "" {
-				if t, ok := hTpl[h.Use]; ok {
-					if h.CheckCommand == "" { h.CheckCommand = t.CheckCommand }
-					if h.CheckPeriod == "" { h.CheckPeriod = t.CheckPeriod }
-				}
-			}
-			actHosts = append(actHosts, h)
-		}
-	}
-	cfg.Hosts = actHosts
-	return cfg
 }

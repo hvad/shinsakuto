@@ -13,58 +13,71 @@ import (
 
 var server *http.Server
 
-// startAPI configures the HTTP server with v1 routing
+// startAPI configures the server and routes
 func startAPI() {
-	port := appConfig.APIPort
-	if port == 0 { port = 8083 }
-	addr := fmt.Sprintf("%s:%d", appConfig.APIAddress, port)
-	
+	addr := fmt.Sprintf("%s:%d", appConfig.APIAddress, appConfig.APIPort)
 	mux := http.NewServeMux()
 	
-	// REST API Version 1
 	mux.HandleFunc("/v1/status", statusHandler)
-	mux.HandleFunc("/v1/downtime", downtimeHandler)
-	mux.HandleFunc("/v1/downtime/", downtimeDeleteHandler)
+	mux.HandleFunc("/v1/downtime", downtimeHandler)       // GET list or POST new
+	mux.HandleFunc("/v1/downtime/", downtimeDeleteHandler) // DELETE by ID
 
 	server = &http.Server{Addr: addr, Handler: mux}
-	log.Printf("[API] Version 1 listening on %s", addr)
-	server.ListenAndServe()
+	log.Printf("[API] Server listening on %s", addr)
+	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		log.Fatalf("[API] Fatal error: %v", err)
+	}
 }
 
-// downtimeHandler handles GET (list) and POST (create) for maintenance windows
+// stopAPI handles the graceful shutdown
+func stopAPI() {
+	log.Println("[API] Shutting down server...")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	server.Shutdown(ctx)
+}
+
+func statusHandler(w http.ResponseWriter, r *http.Request) {
+	configMutex.RLock()
+	defer configMutex.RUnlock()
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"synced": syncSuccess,
+		"last_sync": lastSyncTime.Format(time.RFC3339),
+		"inventory": map[string]int{
+			"hosts":    len(currentConfig.Hosts),
+			"services": len(currentConfig.Services),
+		},
+	})
+}
+
 func downtimeHandler(w http.ResponseWriter, r *http.Request) {
 	configMutex.Lock()
 	defer configMutex.Unlock()
 
-	if r.Method == http.MethodGet {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(downtimes)
-		return
-	}
-
 	if r.Method == http.MethodPost {
 		var d models.Downtime
 		if err := json.NewDecoder(r.Body).Decode(&d); err != nil {
-			http.Error(w, "Bad Request", http.StatusBadRequest)
+			http.Error(w, "Bad JSON", 400)
 			return
 		}
 		d.ID = fmt.Sprintf("dt-%d", time.Now().UnixNano())
 		downtimes = append(downtimes, d)
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(d)
-		go refreshConfig() // Trigger sync immediately
+		go refreshConfig() // Sync changes to scheduler
 		return
 	}
-	http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(downtimes)
 }
 
-// downtimeDeleteHandler deletes a downtime by its ID
 func downtimeDeleteHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	if r.Method != http.MethodDelete { return }
 	id := strings.TrimPrefix(r.URL.Path, "/v1/downtime/")
+	
 	configMutex.Lock()
 	defer configMutex.Unlock()
 
@@ -76,28 +89,5 @@ func downtimeDeleteHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	http.Error(w, "Downtime not found", http.StatusNotFound)
-}
-
-func statusHandler(w http.ResponseWriter, r *http.Request) {
-	configMutex.RLock()
-	defer configMutex.RUnlock()
-	res := map[string]interface{}{
-		"api_version": "v1",
-		"sync_status": syncSuccess,
-		"last_sync":   lastSyncTime.Format(time.RFC3339),
-		"counts": map[string]int{
-			"hosts": len(currentConfig.Hosts),
-			"services": len(currentConfig.Services),
-			"active_downtimes": len(downtimes),
-		},
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(res)
-}
-
-func stopAPI() {
-	log.Println("[API] Shutting down...")
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	server.Shutdown(ctx)
+	http.Error(w, "Downtime not found", 404)
 }

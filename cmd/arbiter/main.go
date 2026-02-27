@@ -12,59 +12,49 @@ import (
 )
 
 func main() {
-	// CLI Arguments parsing
 	configPath := flag.String("config", "config.json", "Internal configuration file path")
-	verifyOnly := flag.Bool("v", false, "Verify configuration and exit")
-	daemonMode := flag.Bool("d", false, "Run as a daemon in background")
+	verifyOnly := flag.Bool("v", false, "Verify configuration integrity and exit")
+	daemonMode := flag.Bool("d", false, "Run the process in background")
 	flag.Parse()
 
-	// 1. Handle Daemon Mode
+	// 1. Daemonization
 	if *daemonMode {
 		args := os.Args[1:]
-		cleanArgs := make([]string, 0)
-		for _, arg := range args {
-			if arg != "-d" { cleanArgs = append(cleanArgs, arg) }
-		}
+		cleanArgs := []string{}
+		for _, a := range args { if a != "-d" { cleanArgs = append(cleanArgs, a) } }
 		cmd := exec.Command(os.Args[0], cleanArgs...)
-		if err := cmd.Start(); err != nil {
-			fmt.Printf("Failed to daemonize: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Arbiter started in background (PID: %d)\n", cmd.Process.Pid)
+		cmd.Start()
+		fmt.Printf("Arbiter daemonized (PID %d)\n", cmd.Process.Pid)
 		os.Exit(0)
 	}
 
-	// 2. Load settings and init dual-logging
+	// 2. Initial Setup
 	if err := loadArbiterLocalConfig(*configPath); err != nil {
-		log.Fatalf("Critical init failure: %v", err)
+		log.Fatalf("Critical error during config load: %v", err)
 	}
 
-	// 3. Configuration Verification Mode (-v)
+	// 3. Verification Mode (-v)
 	if *verifyOnly {
-		fmt.Println("Shinsakuto Arbiter: Starting deep verification...")
+		fmt.Println("Shinsakuto Arbiter: Checking active definitions...")
 		cfg, err := loadAndValidateAll()
 		if err != nil {
-			fmt.Printf("FAILED: %v\n", err)
+			fmt.Printf("FAILURE: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("SUCCESS: Config is healthy (%d Hosts, %d Services, %d Commands, %d Contacts)\n", 
-			len(cfg.Hosts), len(cfg.Services), len(cfg.Commands), len(cfg.Contacts))
+		fmt.Printf("SUCCESS: Config valid (%d active hosts, %d active services)\n", len(cfg.Hosts), len(cfg.Services))
 		os.Exit(0)
 	}
 
-	// 4. Graceful Shutdown Signal Trapping
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+	// 4. Signal Listening for Graceful Stop
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("shinsakuto Arbiter operational (PID: %d)", os.Getpid())
+	log.Printf("shinsakuto Arbiter operational (PID %d)", os.Getpid())
 
-	// Start concurrent components
 	go startWatcher(ctx)
 	go startAPI()
 
-	// Wait for termination signal
 	<-ctx.Done()
-	log.Println("[Main] Signal received, stopping services...")
-	stopAPI()
-	log.Println("[Main] Arbiter stopped clean.")
+	stopAPI() // Shutdown the HTTP server cleanly
+	log.Println("Arbiter stopped.")
 }
