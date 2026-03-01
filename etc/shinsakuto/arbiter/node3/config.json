@@ -1,0 +1,14 @@
+{
+  "scheduler_url": "http://127.0.0.1:8091",
+  "definitions_dir": "./conf.d/ha3",
+  "api_address": "127.0.0.1",
+  "api_port": 8082,
+  "ha_enabled": true,
+  "raft_node_id": "node-3",
+  "raft_bind_addr": "127.0.0.1:7002",
+  "raft_data_dir": "./data/raft/ha3",
+  "bootstrap_cluster": false,
+  "cluster_nodes": ["127.0.0.1:7000", "127.0.0.1:7001"],
+  "hot_reload": true,
+  "sync_interval": 60
+}

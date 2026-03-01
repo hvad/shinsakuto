@@ -12,51 +12,77 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "config.json", "Internal configuration file path")
-	verifyOnly := flag.Bool("v", false, "Verify configuration integrity and exit")
-	daemonMode := flag.Bool("d", false, "Run the process in background")
+	cfgPath := flag.String("config", "config.json", "Path to JSON config file")
+	daemon := flag.Bool("d", false, "Run in background (daemon mode)")
+	verifyOnly := flag.Bool("v", false, "Verify configuration and exit")
 	flag.Parse()
 
-	// 1. Daemonization
-	if *daemonMode {
-		args := os.Args[1:]
-		var cleanArgs []string
-		for _, a := range args { if a != "-d" { cleanArgs = append(cleanArgs, a) } }
-		cmd := exec.Command(os.Args[0], cleanArgs...)
-		if err := cmd.Start(); err != nil {
-			log.Fatalf("Failed to daemonize: %v", err)
-		}
-		fmt.Printf("Arbiter daemonized (PID %d)\n", cmd.Process.Pid)
-		os.Exit(0)
+	// 1. Load Local Node Settings
+	if err := loadArbiterLocalConfig(*cfgPath); err != nil {
+		log.Fatalf("Critical: Failed to load config: %v", err)
 	}
 
-	// 2. Initial Config Load
-	if err := loadArbiterLocalConfig(*configPath); err != nil {
-		log.Fatalf("Critical error during config load: %v", err)
-	}
-
-	// 3. Verification Mode (-v)
+	// 2. Verification Mode (-v)
 	if *verifyOnly {
-		fmt.Println("Shinsakuto Arbiter: Checking active definitions...")
-		cfg, err := loadAndValidateAll()
+		fmt.Printf("Analyzing definitions in: %s\n", appConfig.DefinitionsDir)
+		cfg, err := loadAndProcess()
 		if err != nil {
-			fmt.Printf("FAILURE: %v\n", err)
+			fmt.Printf("[ERR] YAML Error: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("SUCCESS: Config valid (%d active hosts, %d active services)\n", len(cfg.Hosts), len(cfg.Services))
+
+		audit := RunLinter(cfg)
+
+		fmt.Println("\n-------------------------------------------")
+		fmt.Println(" SHINSAKUTO ARBITER CONFIGURATION REPORT")
+		fmt.Println("-------------------------------------------")
+		fmt.Printf(" Hosts:          %d\n", audit.Counts.Hosts)
+		fmt.Printf(" Services:       %d\n", audit.Counts.Services)
+		fmt.Printf(" Commands:       %d\n", audit.Counts.Commands)
+		fmt.Printf(" TimePeriods:    %d\n", audit.Counts.TimePeriods)
+		fmt.Printf(" Contacts:       %d\n", audit.Counts.Contacts)
+		fmt.Printf(" HostGroups:     %d\n", audit.Counts.HostGroups)
+		fmt.Printf(" ServiceGroups:  %d\n", audit.Counts.ServiceGroups)
+		fmt.Println("-------------------------------------------")
+
+		for _, w := range audit.Warnings { fmt.Printf("[WARN] %s\n", w) }
+		if len(audit.Errors) > 0 {
+			for _, e := range audit.Errors { fmt.Printf("[ERR] %s\n", e) }
+			fmt.Println("\nResult: INVALID CONFIGURATION")
+			os.Exit(1)
+		}
+		fmt.Println("\nResult: VALID CONFIGURATION")
 		os.Exit(0)
 	}
 
-	// 4. Runtime logic with Graceful Stop
+	// 3. Daemon Mode (-d)
+	if *daemon {
+		args := []string{"-config", *cfgPath}
+		cmd := exec.Command(os.Args[0], args...)
+		if err := cmd.Start(); err != nil {
+			log.Fatalf("Failed to start daemon: %v", err)
+		}
+		fmt.Printf("Arbiter started in background (PID: %d)\n", cmd.Process.Pid)
+		os.Exit(0)
+	}
+
+	// 4. HA Initialization
+	if appConfig.HAEnabled {
+		if err := setupRaft(); err != nil {
+			log.Fatalf("Raft initialization failed: %v", err)
+		}
+	} else {
+		log.Println("[INFO] High Availability is DISABLED. Running in Standalone mode.")
+	}
+
+	// 5. Lifecycle Management
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	log.Printf("shinsakuto Arbiter operational (PID %d)", os.Getpid())
 
 	go startWatcher(ctx)
 	go startAPI()
 
+	log.Printf("[MAIN] Arbiter operational (Port %d). Press Ctrl+C to stop.", appConfig.APIPort)
 	<-ctx.Done()
-	stopAPI() // Shutdown the HTTP server cleanly
-	log.Println("Arbiter stopped.")
+	log.Println("[MAIN] Shutting down Arbiter gracefully...")
 }

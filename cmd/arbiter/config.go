@@ -10,16 +10,22 @@ import (
 	"shinsakuto/pkg/models"
 )
 
-// ArbiterLocalConfig stores internal process settings
 type ArbiterLocalConfig struct {
-	SchedulerURL       string `json:"scheduler_url"`
-	DefinitionsDir     string `json:"definitions_dir"`
-	APIAddress         string `json:"api_address"`
-	APIPort            int    `json:"api_port"`
-	LogFile            string `json:"log_file"`
-	HotReload          bool   `json:"hot_reload"`
-	HotReloadDebounce  int    `json:"hot_reload_debounce"` 
-	SyncInterval       int    `json:"sync_interval"`        
+	SchedulerURL       string   `json:"scheduler_url"`
+	DefinitionsDir     string   `json:"definitions_dir"`
+	APIAddress         string   `json:"api_address"`
+	APIPort            int      `json:"api_port"`
+	LogFile            string   `json:"log_file"`
+	Debug              bool     `json:"debug"`
+	HotReload          bool     `json:"hot_reload"`
+	HotReloadDebounce  int      `json:"hot_reload_debounce"`
+	SyncInterval       int      `json:"sync_interval"`
+	HAEnabled          bool     `json:"ha_enabled"`
+	RaftNodeID         string   `json:"raft_node_id"`
+	RaftBindAddr       string   `json:"raft_bind_addr"`
+	RaftDataDir        string   `json:"raft_data_dir"`
+	BootstrapCluster   bool     `json:"bootstrap_cluster"`
+	ClusterNodes       []string `json:"cluster_nodes"`
 }
 
 var (
@@ -31,18 +37,18 @@ var (
 	syncSuccess   bool
 )
 
-// loadArbiterLocalConfig reads the JSON config file and initializes logging
 func loadArbiterLocalConfig(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil { return err }
 	if err := json.Unmarshal(data, &appConfig); err != nil { return err }
 
-	if appConfig.SyncInterval == 0 { appConfig.SyncInterval = 60 }
-	if appConfig.HotReloadDebounce == 0 { appConfig.HotReloadDebounce = 2 }
-
+	var logWriter io.Writer = os.Stdout
 	if appConfig.LogFile != "" {
-		f, _ := os.OpenFile(appConfig.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-		log.SetOutput(io.MultiWriter(os.Stdout, f))
+		f, err := os.OpenFile(appConfig.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		if err == nil {
+			logWriter = io.MultiWriter(os.Stdout, f)
+		}
 	}
+	log.SetOutput(logWriter)
 	return nil
 }

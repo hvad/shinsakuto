@@ -6,5 +6,5 @@
   "log_file": "arbiter.log",
   "hot_reload": true,
   "hot_reload_debounce": 5,
-  "sync_interval": 300
+  "sync_interval": 60
 }

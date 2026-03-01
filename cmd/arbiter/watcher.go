@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -16,221 +17,159 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// httpClient is used for all communications with the Scheduler.
-// Timeout is crucial to prevent the Arbiter from hanging if the network is slow.
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
-// startWatcher initializes the background routines for configuration management.
+// startWatcher starts the periodic sync and file watching loops.
 func startWatcher(ctx context.Context) {
-	// Initial load and sync on startup
-	refreshConfig()
-
-	// 1. Periodic Synchronization Loop
-	// This ensures the Scheduler stays in sync even if file events were missed.
+	refreshConfig() // Initial load
 	go func() {
 		ticker := time.NewTicker(time.Duration(appConfig.SyncInterval) * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				log.Println("[Watcher] Triggering scheduled periodic sync...")
-				refreshConfig()
+				if isLeader() {
+					log.Println("[WATCHER] Periodic sync triggered...")
+					refreshConfig()
+				}
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-
-	// 2. Hot Reload Loop (Real-time file monitoring)
 	if appConfig.HotReload {
 		go startHotReloadLoop(ctx)
 	}
 }
 
-// startHotReloadLoop watches the filesystem for changes in the definitions directory.
-func startHotReloadLoop(ctx context.Context) {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		log.Printf("[Watcher] CRITICAL: Failed to initialize fsnotify: %v", err)
-		return
-	}
-	defer watcher.Close()
-
-	// Register the directory and all subdirectories to the watcher
-	err = filepath.Walk(appConfig.DefinitionsDir, func(path string, info os.FileInfo, err error) error {
-		if err == nil && info.IsDir() {
-			return watcher.Add(path)
-		}
-		return nil
-	})
-
-	log.Printf("[Watcher] Hot Reload active. Monitoring: %s", appConfig.DefinitionsDir)
-
-	var timer *time.Timer
-	debounce := time.Duration(appConfig.HotReloadDebounce) * time.Second
-
-	for {
-		select {
-		case event, ok := <-watcher.Events:
-			if !ok { return }
-			// We react to Write, Create, and Remove events on YAML files
-			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove) != 0 {
-				if strings.HasSuffix(event.Name, ".yaml") || strings.HasSuffix(event.Name, ".yml") {
-					// Debouncing: We wait for the filesystem to "settle" before reloading
-					if timer != nil { timer.Stop() }
-					timer = time.AfterFunc(debounce, func() {
-						log.Printf("[Watcher] Change detected: %s. Reloading configuration...", event.Name)
-						refreshConfig()
-					})
-				}
-			}
-		case err, ok := <-watcher.Errors:
-			if !ok { return }
-			log.Printf("[Watcher] Filesystem error: %v", err)
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-// refreshConfig coordinates the full pipeline: Load -> Validate -> Lint -> Sync.
+// refreshConfig loads, validates, and pushes the config to the Scheduler with Retries.
 func refreshConfig() {
-	cfg, err := loadAndValidateAll()
+	cfg, err := loadAndProcess()
 	if err != nil {
-		log.Printf("[Watcher] Refresh aborted: Configuration error: %v", err)
-		syncSuccess = false
+		log.Printf("[ERROR] YAML Processing: %v", err)
 		return
 	}
 
-	// Integrated Linter: Check for best practices before syncing
-	runLinter(cfg)
+	// Audit with Linter
+	audit := RunLinter(cfg)
+	if len(audit.Errors) > 0 {
+		log.Printf("[LINTER] SYNC ABORTED: %d errors found", len(audit.Errors))
+		for _, e := range audit.Errors {
+			log.Printf(" -> %s", e)
+		}
+		return
+	}
 
-	// Thread-safe update of the current configuration
+	// Logging detailed counts
+	log.Printf("[LINTER] Configuration valid. Objects: H:%d, S:%d, CMD:%d, TP:%d, C:%d, HG:%d, SG:%d",
+		audit.Counts.Hosts, audit.Counts.Services, audit.Counts.Commands,
+		audit.Counts.TimePeriods, audit.Counts.Contacts, audit.Counts.HostGroups, audit.Counts.ServiceGroups)
+
 	configMutex.Lock()
-	now := time.Now()
-	
-	// Map active downtimes to objects (Host-level downtime impacts all its services)
-	hostsInDt := make(map[string]bool)
-	for i := range cfg.Hosts {
-		for _, d := range downtimes {
-			if d.HostName == cfg.Hosts[i].ID && d.ServiceID == "" && now.After(d.StartTime) && now.Before(d.EndTime) {
-				cfg.Hosts[i].InDowntime = true
-				hostsInDt[cfg.Hosts[i].ID] = true
-			}
-		}
-	}
-	for i := range cfg.Services {
-		if hostsInDt[cfg.Services[i].HostName] {
-			cfg.Services[i].InDowntime = true
-		}
-	}
-
 	cfg.Downtimes = downtimes
 	currentConfig = *cfg
+	lastSyncTime = time.Now()
 	configMutex.Unlock()
 
-	// Final step: Push data to the Scheduler
-	pushToScheduler(cfg)
-}
-
-// runLinter analyzes the configuration for non-critical best practice violations.
-func runLinter(cfg *models.GlobalConfig) {
-	log.Println("[Linter] Running best practices check...")
-	
-	serviceStats := make(map[string]int)
-	for _, s := range cfg.Services {
-		serviceStats[s.HostName]++
-	}
-
-	for _, h := range cfg.Hosts {
-		// Rule: Connectivity basics
-		if h.Address == "" {
-			log.Printf("[Linter] ADVICE: Host '%s' is missing an 'address' field.", h.ID)
-		}
-
-		// Rule: Alerting basics
-		if len(h.Contacts) == 0 {
-			log.Printf("[Linter] ADVICE: Host '%s' has no contacts defined; alerts will be suppressed.", h.ID)
-		}
-	}
-}
-
-// pushToScheduler sends the JSON payload to the remote Scheduler and handles connection errors.
-func pushToScheduler(cfg *models.GlobalConfig) {
+	// Push to Scheduler with Exponential Retry
 	data, _ := json.Marshal(cfg)
 	url := strings.TrimSuffix(appConfig.SchedulerURL, "/") + "/v1/sync-all"
-	
-	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		// This log is crucial for production troubleshooting
-		log.Printf("[Watcher] CRITICAL: Scheduler UNREACHABLE at %s: %v", url, err)
-		syncSuccess = false
-		return
-	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK {
-		syncSuccess = true
-		lastSyncTime = time.Now()
-		log.Println("[Watcher] OK: Sync completed successfully.")
-	} else {
-		log.Printf("[Watcher] WARNING: Sync failed: Scheduler returned status code %d", resp.StatusCode)
-		syncSuccess = false
-	}
+	go func() {
+		maxRetries := 3
+		wait := 2 * time.Second
+		for i := 1; i <= maxRetries; i++ {
+			log.Printf("[SCHEDULER] Push attempt %d/%d to %s", i, maxRetries, url)
+			resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(data))
+			
+			if err == nil && resp.StatusCode == http.StatusOK {
+				resp.Body.Close()
+				syncSuccess = true
+				log.Printf("[SCHEDULER] SUCCESS: Configuration applied by Scheduler")
+				return
+			}
+
+			syncSuccess = false
+			errMsg := "Connection refused"
+			if err != nil {
+				errMsg = err.Error()
+			} else {
+				errMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+				resp.Body.Close()
+			}
+
+			log.Printf("[SCHEDULER] FAILED (Attempt %d): %s", i, errMsg)
+			if i < maxRetries {
+				log.Printf("[SCHEDULER] Retrying in %v...", wait)
+				time.Sleep(wait)
+				wait *= 2
+			}
+		}
+		log.Printf("[SCHEDULER] FATAL: Failed to sync after %d attempts", maxRetries)
+	}()
 }
 
-// loadAndValidateAll crawls the directory to build the GlobalConfig object.
-func loadAndValidateAll() (*models.GlobalConfig, error) {
+// loadAndProcess handles file reading and 'use' keyword inheritance.
+func loadAndProcess() (*models.GlobalConfig, error) {
 	raw := &models.GlobalConfig{}
 	err := filepath.Walk(appConfig.DefinitionsDir, func(path string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
-			data, _ := os.ReadFile(path)
-			var temp models.GlobalConfig
-			if err := yaml.Unmarshal(data, &temp); err != nil {
-				log.Printf("[Watcher] Skipping invalid YAML file %s: %v", path, err)
-				return nil
+		if err != nil { return err }
+		if !info.IsDir() && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
+			data, err := os.ReadFile(path)
+			if err != nil { return err }
+			var tmp models.GlobalConfig
+			if err := yaml.Unmarshal(data, &tmp); err == nil {
+				raw.Hosts = append(raw.Hosts, tmp.Hosts...)
+				raw.Services = append(raw.Services, tmp.Services...)
+				raw.Commands = append(raw.Commands, tmp.Commands...)
+				raw.TimePeriods = append(raw.TimePeriods, tmp.TimePeriods...)
+				raw.Contacts = append(raw.Contacts, tmp.Contacts...)
+				raw.HostGroups = append(raw.HostGroups, tmp.HostGroups...)
+				raw.ServiceGroups = append(raw.ServiceGroups, tmp.ServiceGroups...)
 			}
-			raw.Hosts = append(raw.Hosts, temp.Hosts...)
-			raw.Services = append(raw.Services, temp.Services...)
-			raw.Commands = append(raw.Commands, temp.Commands...)
-			raw.Contacts = append(raw.Contacts, temp.Contacts...)
-			raw.TimePeriods = append(raw.TimePeriods, temp.TimePeriods...)
 		}
 		return nil
 	})
-	if err != nil { return nil, err }
-	return processInheritance(raw), nil
-}
 
-// processInheritance merges template values into active objects.
-func processInheritance(raw *models.GlobalConfig) *models.GlobalConfig {
-	hTpl := make(map[string]models.Host)
+	// Process Inheritance
+	templates := make(map[string]models.Host)
 	final := &models.GlobalConfig{
-		Commands: raw.Commands, Contacts: raw.Contacts, TimePeriods: raw.TimePeriods,
+		Commands: raw.Commands, TimePeriods: raw.TimePeriods, Contacts: raw.Contacts,
+		HostGroups: raw.HostGroups, ServiceGroups: raw.ServiceGroups,
 	}
 
-	// Separate Templates from Active Objects
 	for _, h := range raw.Hosts {
-		if h.Register != nil && !*h.Register { hTpl[h.ID] = h }
+		if h.Register != nil && !*h.Register { templates[h.ID] = h }
 	}
-
-	// Merge templates into registered hosts
 	for _, h := range raw.Hosts {
 		if h.Register == nil || *h.Register {
 			if h.Use != "" {
-				if t, ok := hTpl[h.Use]; ok {
+				if t, ok := templates[h.Use]; ok {
 					if h.CheckCommand == "" { h.CheckCommand = t.CheckCommand }
 					if h.CheckPeriod == "" { h.CheckPeriod = t.CheckPeriod }
-					if len(h.Contacts) == 0 { h.Contacts = t.Contacts }
 				}
 			}
 			final.Hosts = append(final.Hosts, h)
 		}
 	}
+	final.Services = raw.Services
+	return final, err
+}
 
-	for _, s := range raw.Services {
-		if s.Register == nil || *s.Register { final.Services = append(final.Services, s) }
+func startHotReloadLoop(ctx context.Context) {
+	watcher, _ := fsnotify.NewWatcher()
+	defer watcher.Close()
+	watcher.Add(appConfig.DefinitionsDir)
+	for {
+		select {
+		case event := <-watcher.Events:
+			if isLeader() && event.Op&fsnotify.Write == fsnotify.Write {
+				log.Printf("[HOTRELOAD] Change detected: %s", event.Name)
+				refreshConfig()
+				broadcastToFollowers()
+			}
+		case <-ctx.Done():
+			return
+		}
 	}
-
-	return final
 }
