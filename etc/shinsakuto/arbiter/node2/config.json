@@ -14,7 +14,6 @@
   "raft_data_dir": "var/lib/raft/node2",
   "bootstrap_cluster": false,
   "cluster_nodes": [
-    "127.0.0.1:8080",
-    "127.0.0.1:8082"
+    "127.0.0.1:8080"
   ]
 }

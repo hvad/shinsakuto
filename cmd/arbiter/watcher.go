@@ -34,6 +34,9 @@ func startWatcher(ctx context.Context) {
 				if isLeader() {
 					log.Println("[WATCHER] Cycle de synchronisation périodique...")
 					refreshConfig()
+					
+					log.Println("[WATCHER] Synchronisation de la configuration de supervision...")
+					broadcastToFollowers()
 				}
 			case <-ctx.Done():
 				return
@@ -46,29 +49,67 @@ func startWatcher(ctx context.Context) {
 	}
 }
 
+//func refreshConfig() {
+//	cfg, err := loadAndProcess()
+//	if err != nil {
+//		log.Printf("[ERREUR] %v", err)
+//		return
+//	}
+//
+//	audit := RunLinter(cfg)
+//	if len(audit.Errors) > 0 {
+//		log.Printf("[LINTER] SYNCHRO REJETÉE : %d erreurs critiques", len(audit.Errors))
+//		return
+//	}
+//
+//	configMutex.Lock()
+//	currentConfig = *cfg
+//	lastSyncTime = time.Now()
+//	configMutex.Unlock()
+//
+//	data, _ := json.Marshal(cfg)
+//	url := strings.TrimSuffix(appConfig.SchedulerURL, "/") + "/v1/sync-all"
+//	
+//	// Journalisation et envoi
+//	sendToScheduler(url, data, audit.Counts)
+//}
+
+// Dans watcher.go
+
 func refreshConfig() {
+	// 1. Chargement et traitement des fichiers (commun à tous)
 	cfg, err := loadAndProcess()
 	if err != nil {
 		log.Printf("[ERREUR] %v", err)
 		return
 	}
 
-	audit := RunLinter(cfg)
-	if len(audit.Errors) > 0 {
-		log.Printf("[LINTER] SYNCHRO REJETÉE : %d erreurs critiques", len(audit.Errors))
-		return
-	}
-
+	// 2. Mise à jour de l'état interne
 	configMutex.Lock()
 	currentConfig = *cfg
 	lastSyncTime = time.Now()
 	configMutex.Unlock()
 
+	// 3. CONDITION DE SÉCURITÉ MISE À JOUR
+	// On n'envoie au scheduler QUE si on est en solo OU si on est le leader HA
+	canSend := !appConfig.HAEnabled || isLeader()
+
+	if !canSend {
+		// Si on est un Follower, on s'arrête ici
+		return 
+	}
+
+	// 4. Envoi au Scheduler (uniquement pour Solo ou Leader)
+	audit := RunLinter(cfg)
 	data, _ := json.Marshal(cfg)
 	url := strings.TrimSuffix(appConfig.SchedulerURL, "/") + "/v1/sync-all"
 	
-	// Journalisation et envoi
 	sendToScheduler(url, data, audit.Counts)
+
+	// 5. Si on est Leader HA, on propage aussi aux followers
+	if appConfig.HAEnabled && isLeader() {
+		broadcastToFollowers()
+	}
 }
 
 func loadAndProcess() (*models.GlobalConfig, error) {
