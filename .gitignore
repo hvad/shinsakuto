@@ -32,6 +32,7 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# Logs
-*.log
+# Project
+data/
+var/
 arbiter.log

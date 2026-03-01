@@ -1,14 +1,20 @@
 {
   "scheduler_url": "http://127.0.0.1:8091",
-  "definitions_dir": "./conf.d/ha2",
+  "definitions_dir": "etc/shinsakuto/conf.d/node2",
   "api_address": "127.0.0.1",
   "api_port": 8081,
+  "log_file": "var/log/arbiter-node2.log",
+  "debug": true,
+  "hot_reload": true,
+  "hot_reload_debounce": 500,
+  "sync_interval": 30,
   "ha_enabled": true,
   "raft_node_id": "node-2",
   "raft_bind_addr": "127.0.0.1:7001",
-  "raft_data_dir": "./data/raft/ha2",
+  "raft_data_dir": "var/lib/raft/node2",
   "bootstrap_cluster": false,
-  "cluster_nodes": ["127.0.0.1:7000", "127.0.0.1:7002"],
-  "hot_reload": true,
-  "sync_interval": 60
+  "cluster_nodes": [
+    "127.0.0.1:8080",
+    "127.0.0.1:8082"
+  ]
 }

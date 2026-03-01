@@ -1,10 +1,13 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -19,9 +22,9 @@ import (
 
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
-// startWatcher starts the periodic sync and file watching loops.
 func startWatcher(ctx context.Context) {
-	refreshConfig() // Initial load
+	refreshConfig()
+
 	go func() {
 		ticker := time.NewTicker(time.Duration(appConfig.SyncInterval) * time.Second)
 		defer ticker.Stop()
@@ -29,7 +32,7 @@ func startWatcher(ctx context.Context) {
 			select {
 			case <-ticker.C:
 				if isLeader() {
-					log.Println("[WATCHER] Periodic sync triggered...")
+					log.Println("[WATCHER] Cycle de synchronisation périodique...")
 					refreshConfig()
 				}
 			case <-ctx.Done():
@@ -37,84 +40,42 @@ func startWatcher(ctx context.Context) {
 			}
 		}
 	}()
+
 	if appConfig.HotReload {
 		go startHotReloadLoop(ctx)
 	}
 }
 
-// refreshConfig loads, validates, and pushes the config to the Scheduler with Retries.
 func refreshConfig() {
 	cfg, err := loadAndProcess()
 	if err != nil {
-		log.Printf("[ERROR] YAML Processing: %v", err)
+		log.Printf("[ERREUR] %v", err)
 		return
 	}
 
-	// Audit with Linter
 	audit := RunLinter(cfg)
 	if len(audit.Errors) > 0 {
-		log.Printf("[LINTER] SYNC ABORTED: %d errors found", len(audit.Errors))
-		for _, e := range audit.Errors {
-			log.Printf(" -> %s", e)
-		}
+		log.Printf("[LINTER] SYNCHRO REJETÉE : %d erreurs critiques", len(audit.Errors))
 		return
 	}
 
-	// Logging detailed counts
-	log.Printf("[LINTER] Configuration valid. Objects: H:%d, S:%d, CMD:%d, TP:%d, C:%d, HG:%d, SG:%d",
-		audit.Counts.Hosts, audit.Counts.Services, audit.Counts.Commands,
-		audit.Counts.TimePeriods, audit.Counts.Contacts, audit.Counts.HostGroups, audit.Counts.ServiceGroups)
-
 	configMutex.Lock()
-	cfg.Downtimes = downtimes
 	currentConfig = *cfg
 	lastSyncTime = time.Now()
 	configMutex.Unlock()
 
-	// Push to Scheduler with Exponential Retry
 	data, _ := json.Marshal(cfg)
 	url := strings.TrimSuffix(appConfig.SchedulerURL, "/") + "/v1/sync-all"
-
-	go func() {
-		maxRetries := 3
-		wait := 2 * time.Second
-		for i := 1; i <= maxRetries; i++ {
-			log.Printf("[SCHEDULER] Push attempt %d/%d to %s", i, maxRetries, url)
-			resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(data))
-			
-			if err == nil && resp.StatusCode == http.StatusOK {
-				resp.Body.Close()
-				syncSuccess = true
-				log.Printf("[SCHEDULER] SUCCESS: Configuration applied by Scheduler")
-				return
-			}
-
-			syncSuccess = false
-			errMsg := "Connection refused"
-			if err != nil {
-				errMsg = err.Error()
-			} else {
-				errMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
-				resp.Body.Close()
-			}
-
-			log.Printf("[SCHEDULER] FAILED (Attempt %d): %s", i, errMsg)
-			if i < maxRetries {
-				log.Printf("[SCHEDULER] Retrying in %v...", wait)
-				time.Sleep(wait)
-				wait *= 2
-			}
-		}
-		log.Printf("[SCHEDULER] FATAL: Failed to sync after %d attempts", maxRetries)
-	}()
+	
+	// Journalisation et envoi
+	sendToScheduler(url, data, audit.Counts)
 }
 
-// loadAndProcess handles file reading and 'use' keyword inheritance.
 func loadAndProcess() (*models.GlobalConfig, error) {
 	raw := &models.GlobalConfig{}
 	err := filepath.Walk(appConfig.DefinitionsDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil { return err }
-		if !info.IsDir() && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
+		if err != nil || info.IsDir() { return err }
+		if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
 			data, err := os.ReadFile(path)
 			if err != nil { return err }
 			var tmp models.GlobalConfig
@@ -131,20 +92,24 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 		return nil
 	})
 
-	// Process Inheritance
-	templates := make(map[string]models.Host)
 	final := &models.GlobalConfig{
-		Commands: raw.Commands, TimePeriods: raw.TimePeriods, Contacts: raw.Contacts,
-		HostGroups: raw.HostGroups, ServiceGroups: raw.ServiceGroups,
+		Commands:      raw.Commands,
+		TimePeriods:   raw.TimePeriods,
+		Contacts:      raw.Contacts,
+		HostGroups:    raw.HostGroups,
+		ServiceGroups: raw.ServiceGroups,
+	}
+
+	hTemplates := make(map[string]models.Host)
+	for _, h := range raw.Hosts {
+		if h.Register != nil && !*h.Register { hTemplates[h.ID] = h }
 	}
 
 	for _, h := range raw.Hosts {
-		if h.Register != nil && !*h.Register { templates[h.ID] = h }
-	}
-	for _, h := range raw.Hosts {
 		if h.Register == nil || *h.Register {
 			if h.Use != "" {
-				if t, ok := templates[h.Use]; ok {
+				if t, ok := hTemplates[h.Use]; ok {
+					if h.Address == "" { h.Address = t.Address }
 					if h.CheckCommand == "" { h.CheckCommand = t.CheckCommand }
 					if h.CheckPeriod == "" { h.CheckPeriod = t.CheckPeriod }
 				}
@@ -152,24 +117,94 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 			final.Hosts = append(final.Hosts, h)
 		}
 	}
-	final.Services = raw.Services
+
+	for _, s := range raw.Services {
+		if s.Register == nil || *s.Register {
+			final.Services = append(final.Services, s)
+		}
+	}
 	return final, err
 }
 
+func sendToScheduler(url string, data []byte, counts ObjectCounts) {
+	log.Printf("[WATCHER] Envoi au Scheduler (%d hôtes, %d services)...", counts.Hosts, counts.Services)
+	
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		syncSuccess = false
+		log.Printf("[WATCHER] ERREUR : Impossible de joindre le Scheduler : %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		syncSuccess = true
+		log.Printf("[WATCHER] SUCCÈS : Configuration synchronisée avec succès")
+	} else {
+		syncSuccess = false
+		log.Printf("[WATCHER] ÉCHEC : Le Scheduler a répondu avec le code %d", resp.StatusCode)
+	}
+}
+
 func startHotReloadLoop(ctx context.Context) {
-	watcher, _ := fsnotify.NewWatcher()
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil { return }
 	defer watcher.Close()
 	watcher.Add(appConfig.DefinitionsDir)
+
 	for {
 		select {
-		case event := <-watcher.Events:
-			if isLeader() && event.Op&fsnotify.Write == fsnotify.Write {
-				log.Printf("[HOTRELOAD] Change detected: %s", event.Name)
-				refreshConfig()
-				broadcastToFollowers()
+		case event, ok := <-watcher.Events:
+			if !ok { return }
+			if event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Create == fsnotify.Create {
+				if isLeader() {
+					log.Printf("[HOTRELOAD] Fichier modifié : %s", event.Name)
+					refreshConfig()
+					broadcastToFollowers()
+				}
 			}
 		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+func broadcastToFollowers() {
+	if !appConfig.HAEnabled || !isLeader() { return }
+
+	for _, nodeAddr := range appConfig.ClusterNodes {
+		if strings.Contains(nodeAddr, appConfig.APIAddress) && strings.Contains(nodeAddr, fmt.Sprintf("%d", appConfig.APIPort)) {
+			continue
+		}
+
+		go func(addr string) {
+			var buf bytes.Buffer
+			gzw := gzip.NewWriter(&buf)
+			tw := tar.NewWriter(gzw)
+
+			filepath.Walk(appConfig.DefinitionsDir, func(path string, info os.FileInfo, err error) error {
+				if err != nil || info.IsDir() { return nil }
+				relPath, _ := filepath.Rel(appConfig.DefinitionsDir, path)
+				header, _ := tar.FileInfoHeader(info, "")
+				header.Name = relPath
+				tw.WriteHeader(header)
+				f, _ := os.Open(path)
+				io.Copy(tw, f)
+				f.Close()
+				return nil
+			})
+
+			tw.Close()
+			gzw.Close()
+
+			url := fmt.Sprintf("http://%s/v1/cluster/sync-receiver", addr)
+			resp, err := httpClient.Post(url, "application/x-gzip", &buf)
+			if err != nil {
+				log.Printf("[HA] Erreur synchro vers %s : %v", addr, err)
+				return
+			}
+			resp.Body.Close()
+			log.Printf("[HA] Propagation des fichiers vers %s réussie", addr)
+		}(nodeAddr)
 	}
 }

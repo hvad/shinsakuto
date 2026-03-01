@@ -1,9 +1,7 @@
 package main
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,106 +12,144 @@ import (
 	"path/filepath"
 	"time"
 
+	"shinsakuto/pkg/models" 
 	"github.com/hashicorp/raft"
-	boltdb "github.com/hashicorp/raft-boltdb"
-	"shinsakuto/pkg/models"
+	raftboltdb "github.com/hashicorp/raft-boltdb"
 )
 
-var raftNode *raft.Raft
+var (
+	raftNode *raft.Raft
+)
 
 type LogPayload struct {
-	Action string          `json:"action"`
-	Data   models.Downtime `json:"data"`
+	Action string      `json:"action"`
+	Data   interface{} `json:"data"`
 }
-
-type ArbiterFSM struct{}
-
-func (f *ArbiterFSM) Apply(l *raft.Log) interface{} {
-	var p LogPayload
-	json.Unmarshal(l.Data, &p)
-	configMutex.Lock()
-	defer configMutex.Unlock()
-
-	switch p.Action {
-	case "ADD_DT":
-		downtimes = append(downtimes, p.Data)
-		log.Printf("[HA] Replicated Downtime Added: %s", p.Data.ID)
-	case "DEL_DT":
-		var newList []models.Downtime
-		for _, d := range downtimes {
-			if d.ID != p.Data.ID { newList = append(newList, d) }
-		}
-		downtimes = newList
-	}
-	return nil
-}
-
-func (f *ArbiterFSM) Snapshot() (raft.FSMSnapshot, error) { return &ArbiterSnapshot{}, nil }
-func (f *ArbiterFSM) Restore(rc io.ReadCloser) error {
-	configMutex.Lock()
-	defer configMutex.Unlock()
-	return json.NewDecoder(rc).Decode(&downtimes)
-}
-
-type ArbiterSnapshot struct{}
-func (s *ArbiterSnapshot) Persist(sink raft.SnapshotSink) error {
-	json.NewEncoder(sink).Encode(downtimes)
-	return sink.Close()
-}
-func (s *ArbiterSnapshot) Release() {}
 
 func setupRaft() error {
-	if !appConfig.HAEnabled { return nil }
-	os.MkdirAll(appConfig.RaftDataDir, 0700)
+    raftConfig := raft.DefaultConfig()
+    raftConfig.LocalID = raft.ServerID(appConfig.RaftNodeID)
+    // Accélérer les délais pour la détection locale
+    raftConfig.ElectionTimeout = 500 * time.Millisecond
+    raftConfig.HeartbeatTimeout = 500 * time.Millisecond
 
-	c := raft.DefaultConfig()
-	c.LocalID = raft.ServerID(appConfig.RaftNodeID)
-	if !appConfig.Debug { c.LogOutput = io.Discard }
+    addr, err := net.ResolveTCPAddr("tcp", appConfig.RaftBindAddr)
+    if err != nil { return err }
 
-	addr, _ := net.ResolveTCPAddr("tcp", appConfig.RaftBindAddr)
-	transport, _ := raft.NewTCPTransport(appConfig.RaftBindAddr, addr, 3, 10*time.Second, os.Stderr)
+    transport, err := raft.NewTCPTransport(appConfig.RaftBindAddr, addr, 3, 10*time.Second, os.Stderr)
+    if err != nil { return err }
 
-	db, _ := boltdb.NewBoltStore(filepath.Join(appConfig.RaftDataDir, "raft.db"))
-	stable, _ := boltdb.NewBoltStore(filepath.Join(appConfig.RaftDataDir, "stable.db"))
-	fss, _ := raft.NewFileSnapshotStore(appConfig.RaftDataDir, 2, os.Stderr)
+    // Correction "Rollback failed" : s'assurer que le chemin est unique par nœud
+    if err := os.MkdirAll(appConfig.RaftDataDir, 0755); err != nil { return err }
 
-	r, err := raft.NewRaft(c, &ArbiterFSM{}, db, stable, fss, transport)
-	if err != nil { return err }
+    snapshots, _ := raft.NewFileSnapshotStore(appConfig.RaftDataDir, 2, os.Stderr)
+    logStore, _ := raftboltdb.NewBoltStore(filepath.Join(appConfig.RaftDataDir, "raft-log.db"))
+    stableStore, _ := raftboltdb.NewBoltStore(filepath.Join(appConfig.RaftDataDir, "raft-stable.db"))
 
-	if appConfig.BootstrapCluster {
-		r.BootstrapCluster(raft.Configuration{
-			Servers: []raft.Server{{ID: c.LocalID, Address: transport.LocalAddr()}},
-		})
-	}
-	raftNode = r
-	return nil
+    r, err := raft.NewRaft(raftConfig, &arbiterFSM{}, logStore, stableStore, snapshots, transport)
+    if err != nil { return err }
+    raftNode = r
+
+    if appConfig.BootstrapCluster {
+        log.Printf("[HA] Bootstrapping cluster...")
+        configuration := raft.Configuration{
+            Servers: []raft.Server{{ID: raftConfig.LocalID, Address: transport.LocalAddr()}},
+        }
+        raftNode.BootstrapCluster(configuration)
+    } else {
+        // Le nœud tente de rejoindre le cluster via les peers connus
+        go joinCluster()
+    }
+    return nil
+}
+
+func joinCluster() {
+    // Attendre que l'API du Leader soit potentiellement prête
+    time.Sleep(2 * time.Second)
+    for _, node := range appConfig.ClusterNodes {
+        log.Printf("[HA] Tentative de jonction au cluster via : %s", node)
+        url := fmt.Sprintf("http://%s/v1/cluster/join", node)
+        body, _ := json.Marshal(map[string]string{
+            "node_id": appConfig.RaftNodeID,
+            "address": appConfig.RaftBindAddr,
+        })
+        resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
+        if err == nil && resp.StatusCode == http.StatusOK {
+            log.Printf("[HA] Cluster rejoint avec succès via %s", node)
+            return
+        }
+    }
 }
 
 func isLeader() bool {
-	if !appConfig.HAEnabled { return true }
-	return raftNode != nil && raftNode.State() == raft.Leader
-}
-
-func broadcastToFollowers() {
-	if !isLeader() || !appConfig.HAEnabled { return }
-	var buf bytes.Buffer
-	gzw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gzw)
-
-	filepath.Walk(appConfig.DefinitionsDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() { return nil }
-		rel, _ := filepath.Rel(appConfig.DefinitionsDir, path)
-		hdr, _ := tar.FileInfoHeader(info, "")
-		hdr.Name = rel
-		tw.WriteHeader(hdr)
-		data, _ := os.ReadFile(path)
-		tw.Write(data)
-		return nil
-	})
-	tw.Close(); gzw.Close()
-
-	for _, peer := range appConfig.ClusterNodes {
-		url := fmt.Sprintf("http://%s/v1/cluster/sync-receiver", peer)
-		http.Post(url, "application/x-gzip", bytes.NewReader(buf.Bytes()))
+	if !appConfig.HAEnabled {
+		return true
 	}
+	if raftNode == nil {
+		return false
+	}
+	return raftNode.State() == raft.Leader
 }
+
+type arbiterFSM struct{}
+
+func (f *arbiterFSM) Apply(l *raft.Log) interface{} {
+	var p LogPayload
+	if err := json.Unmarshal(l.Data, &p); err != nil {
+		return err
+	}
+
+	switch p.Action {
+	case "ADD_DT":
+		dataBytes, _ := json.Marshal(p.Data)
+		var d models.Downtime
+		json.Unmarshal(dataBytes, &d)
+
+		configMutex.Lock()
+		downtimes = append(downtimes, d)
+		configMutex.Unlock()
+		
+		log.Printf("[FSM] Downtime répliqué appliqué localement : %s", d.ID)
+	}
+	return nil
+}
+
+func (f *arbiterFSM) Snapshot() (raft.FSMSnapshot, error) {
+	configMutex.RLock()
+	defer configMutex.RUnlock()
+	return &arbiterSnapshot{Downtimes: downtimes}, nil
+}
+
+func (f *arbiterFSM) Restore(rc io.ReadCloser) error {
+	var s arbiterSnapshot
+	if err := json.NewDecoder(rc).Decode(&s); err != nil {
+		return err
+	}
+	configMutex.Lock()
+	downtimes = s.Downtimes
+	configMutex.Unlock()
+	return nil
+}
+
+type arbiterSnapshot struct {
+	Downtimes []models.Downtime
+}
+
+func (s *arbiterSnapshot) Persist(sink raft.SnapshotSink) error {
+	err := func() error {
+		b, err := json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		if _, err := sink.Write(b); err != nil {
+			return err
+		}
+		return sink.Close()
+	}()
+	if err != nil {
+		sink.Cancel()
+	}
+	return err
+}
+
+func (s *arbiterSnapshot) Release() {}
