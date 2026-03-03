@@ -16,31 +16,49 @@ import (
 	"github.com/hashicorp/raft"
 )
 
-// startAPI initialise le serveur HTTP pour l'administration et la communication inter-nœuds.
+// startAPI initializes the HTTP server for administration, metrics, and cluster coordination.
 func startAPI() {
 	mux := http.NewServeMux()
 
-	// Endpoint : État de santé et statistiques du nœud
+	// Monitoring & Health
+	mux.HandleFunc("/v1/metrics", handleMetrics)
 	mux.HandleFunc("/v1/status", handleStatus)
 
-	// Endpoint : Gestion des périodes de maintenance (Downtimes)
+	// Business Logic
 	mux.HandleFunc("/v1/downtime", handleDowntime)
 
-	// Endpoint : Réception des fichiers de configuration (HA - Uniquement pour les Followers)
+	// Cluster & HA
 	mux.HandleFunc("/v1/cluster/sync-receiver", handleClusterSync)
-
-	// Endpoint : Joindre le cluster
 	mux.HandleFunc("/v1/cluster/join", handleJoin)
 
 	addr := fmt.Sprintf("%s:%d", appConfig.APIAddress, appConfig.APIPort)
-	log.Printf("[API] Serveur démarré sur %s", addr)
+	log.Printf("[API] Arbiter API server listening on %s", addr)
 
 	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatalf("[FATAL] Échec du serveur API : %v", err)
+		log.Fatalf("[FATAL] API server failed: %v", err)
 	}
 }
 
-// handleStatus retourne les informations sur le rôle du nœud et la dernière synchronisation.
+// handleMetrics serves hardware and business metrics in a format easy to parse for Shinken/Nagios.
+func handleMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	stats := getSystemMetrics()
+
+	fmt.Fprintf(w, "# Shinsakuto Arbiter Internal Metrics\n")
+	fmt.Fprintf(w, "arbiter_cpu_user_seconds_total %.2f\n", stats.CPUUser)
+	fmt.Fprintf(w, "arbiter_cpu_system_seconds_total %.2f\n", stats.CPUSys)
+	fmt.Fprintf(w, "arbiter_process_uptime_seconds %.0f\n", time.Since(startTime).Seconds())
+	fmt.Fprintf(w, "arbiter_mem_alloc_bytes %d\n", stats.MemAlloc)
+	fmt.Fprintf(w, "arbiter_mem_rss_bytes %d\n", stats.MemRSS)
+	fmt.Fprintf(w, "arbiter_goroutines_count %d\n", stats.Goroutines)
+
+	configMutex.RLock()
+	fmt.Fprintf(w, "arbiter_monitored_hosts_total %d\n", len(currentConfig.Hosts))
+	fmt.Fprintf(w, "arbiter_monitored_services_total %d\n", len(currentConfig.Services))
+	configMutex.RUnlock()
+}
+
+// handleStatus returns JSON information about the node's current state.
 func handleStatus(w http.ResponseWriter, r *http.Request) {
 	configMutex.RLock()
 	defer configMutex.RUnlock()
@@ -51,38 +69,32 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res := map[string]interface{}{
-		"node_id":    appConfig.RaftNodeID,
-		"role":       role,
-		"last_sync":  lastSyncTime.Format(time.RFC3339),
-		"sync_ok":    syncSuccess,
-		"counts": map[string]int{
-			"hosts":    len(currentConfig.Hosts),
-			"services": len(currentConfig.Services),
-		},
+		"node_id":   appConfig.RaftNodeID,
+		"role":      role,
+		"last_sync": lastSyncTime.Format(time.RFC3339),
+		"sync_ok":   syncSuccess,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 }
 
-// handleDowntime gère l'ajout et la consultation des maintenances.
+// handleDowntime manages the registration and listing of maintenance windows.
 func handleDowntime(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		// Seul le Leader peut accepter de nouveaux downtimes pour garantir la cohérence
 		if !isLeader() {
-			http.Error(w, "Échec : Ce nœud n'est pas le Leader Raft", http.StatusForbidden)
+			http.Error(w, "Forbidden: This node is not the Raft Leader", http.StatusForbidden)
 			return
 		}
 
 		var d models.Downtime
 		if err := json.NewDecoder(r.Body).Decode(&d); err != nil {
-			http.Error(w, "JSON invalide", http.StatusBadRequest)
+			http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
 			return
 		}
 
 		d.ID = fmt.Sprintf("dt-%d", time.Now().UnixNano())
 
-		// Si HA activé, on réplique via Raft. Sinon, on ajoute localement.
 		if appConfig.HAEnabled && raftNode != nil {
 			payload, _ := json.Marshal(LogPayload{Action: "ADD_DT", Data: d})
 			raftNode.Apply(payload, 5*time.Second)
@@ -92,91 +104,77 @@ func handleDowntime(w http.ResponseWriter, r *http.Request) {
 			configMutex.Unlock()
 		}
 
-		log.Printf("[API] Nouveau Downtime enregistré pour l'hôte : %s", d.HostName)
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(d)
-
-		// On déclenche une mise à jour immédiate vers le Scheduler
 		go refreshConfig()
 		return
 	}
 
-	// GET : Retourne la liste actuelle
 	configMutex.RLock()
 	defer configMutex.RUnlock()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(downtimes)
 }
 
-// handleClusterSync reçoit une archive TGZ du Leader et l'extrait localement.
+// handleClusterSync receives a TGZ archive from the Leader and extracts it localy.
 func handleClusterSync(w http.ResponseWriter, r *http.Request) {
 	if isLeader() || !appConfig.HAEnabled {
-		http.Error(w, "Requête rejetée : Nœud Leader ou mode Solo", http.StatusForbidden)
+		http.Error(w, "Rejected", http.StatusForbidden)
 		return
 	}
 
-	log.Println("[API] Réception d'une synchronisation de fichiers du Leader...")
-
 	gzr, err := gzip.NewReader(r.Body)
 	if err != nil {
-		http.Error(w, "Format GZIP invalide", http.StatusBadRequest)
+		http.Error(w, "Invalid GZIP", http.StatusBadRequest)
 		return
 	}
 	defer gzr.Close()
 
 	tr := tar.NewReader(gzr)
-
 	for {
 		header, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			http.Error(w, "Erreur TAR", http.StatusInternalServerError)
-			return
-		}
+		if err == io.EOF { break }
+		if err != nil { break }
 
 		target := filepath.Join(appConfig.DefinitionsDir, header.Name)
-
 		switch header.Typeflag {
 		case tar.TypeDir:
 			os.MkdirAll(target, 0755)
 		case tar.TypeReg:
 			os.MkdirAll(filepath.Dir(target), 0755)
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(header.Mode))
-			if err != nil {
-				continue
+			f, _ := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(header.Mode))
+			if f != nil {
+				io.Copy(f, tr)
+				f.Close()
 			}
-			io.Copy(f, tr)
-			f.Close()
 		}
 	}
-
 	w.WriteHeader(http.StatusOK)
-	log.Println("[API] Synchronisation du cluster terminée avec succès.")
-
-	// On rafraîchit la config locale pour prendre en compte les nouveaux fichiers
 	go refreshConfig()
 }
 
+// handleJoin processes requests from new nodes wanting to join the Raft cluster.
 func handleJoin(w http.ResponseWriter, r *http.Request) {
-    if !isLeader() {
-        http.Error(w, "Not leader", http.StatusTemporaryRedirect)
-        return
-    }
-    var req struct {
-        NodeID  string `json:"node_id"`
-        Address string `json:"address"`
-    }
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        http.Error(w, "Bad request", http.StatusBadRequest)
-        return
-    }
-    log.Printf("[HA] Ajout du nœud %s (%s) au cluster", req.NodeID, req.Address)
-    future := raftNode.AddVoter(raft.ServerID(req.NodeID), raft.ServerAddress(req.Address), 0, 0)
-    if err := future.Error(); err != nil {
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
-    }
-    w.WriteHeader(http.StatusOK)
+	if !isLeader() {
+		http.Error(w, "Not leader", http.StatusTemporaryRedirect)
+		return
+	}
+
+	var req struct {
+		NodeID  string `json:"node_id"`
+		Address string `json:"address"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	future := raftNode.AddVoter(raft.ServerID(req.NodeID), raft.ServerAddress(req.Address), 0, 0)
+	if err := future.Error(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
