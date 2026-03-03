@@ -20,7 +20,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var httpClient = &http.Client{Timeout: 10 * time.Second}
+var (
+	httpClient        = &http.Client{Timeout: 15 * time.Second}
+	isInCoolOff       = false
+	coolOffStartTime  time.Time
+)
 
 // startWatcher initializes the background loops for configuration management.
 func startWatcher(ctx context.Context) {
@@ -51,6 +55,16 @@ func startWatcher(ctx context.Context) {
 
 // refreshConfig triggers a full reload, validation, and propagation cycle.
 func refreshConfig() {
+	// Check if we are in the safety cool-off period after consecutive failures
+	if isInCoolOff {
+		coolOffDuration := time.Duration(appConfig.SchedulerCoolOffMinutes) * time.Minute
+		if time.Since(coolOffStartTime) < coolOffDuration {
+			log.Printf("[WATCHER] Sync skipped: system is in cool-off period until %v", coolOffStartTime.Add(coolOffDuration).Format("15:04:05"))
+			return
+		}
+		isInCoolOff = false // Reset cool-off if the time has passed
+	}
+
 	cfg, err := loadAndProcess()
 	if err != nil {
 		log.Printf("[ERROR] Failed to process configuration: %v", err)
@@ -62,7 +76,7 @@ func refreshConfig() {
 	lastSyncTime = time.Now()
 	configMutex.Unlock()
 
-	// Only the Leader is allowed to push to Scheduler and Followers
+	// Only the Leader is allowed to push to Schedulers and Followers
 	if !isLeader() {
 		return
 	}
@@ -75,14 +89,62 @@ func refreshConfig() {
 		return
 	}
 
-	// Push validated configuration to the central Scheduler
+	// 1. Push validated configuration to the list of Schedulers with Retry Logic
 	data, _ := json.Marshal(cfg)
-	url := strings.TrimSuffix(appConfig.SchedulerURL, "/") + "/v1/sync-all"
-	sendToScheduler(url, data)
+	go syncToAllSchedulers(data)
 
-	// Propagate configuration files to all HA Follower nodes
+	// 2. Propagate configuration files to all HA Follower nodes
 	if appConfig.HAEnabled {
 		broadcastToFollowers()
+	}
+}
+
+// syncToAllSchedulers iterates over the scheduler list and handles retries.
+func syncToAllSchedulers(data []byte) {
+	successCount := 0
+	totalSchedulers := len(appConfig.SchedulerURLs)
+
+	if totalSchedulers == 0 {
+		log.Println("[WATCHER] Warning: No Scheduler URLs configured")
+		return
+	}
+
+	for _, rawURL := range appConfig.SchedulerURLs {
+		url := strings.TrimSuffix(rawURL, "/") + "/v1/sync-all"
+		
+		// Retry logic: 3 attempts per scheduler
+		for i := 1; i <= 3; i++ {
+			log.Printf("[WATCHER] Sending config to %s (Attempt %d/3)", url, i)
+			
+			resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(data))
+			if err == nil && resp.StatusCode == http.StatusOK {
+				resp.Body.Close()
+				log.Printf("[WATCHER] Successfully synchronized with Scheduler: %s", url)
+				successCount++
+				break // Success, move to next scheduler
+			}
+
+			if err != nil {
+				log.Printf("[WATCHER] Attempt %d failed for %s: %v", i, url, err)
+			} else {
+				log.Printf("[WATCHER] Attempt %d failed for %s: Status %d", i, url, resp.StatusCode)
+				resp.Body.Close()
+			}
+
+			if i < 3 {
+				time.Sleep(5 * time.Second) // Interval between retries
+			}
+		}
+	}
+
+	// If 0 schedulers were reached after all retries, enter cool-off period
+	if successCount == 0 {
+		log.Printf("[WATCHER] FATAL: Failed to reach any Scheduler. Entering cool-off for %d minutes", appConfig.SchedulerCoolOffMinutes)
+		isInCoolOff = true
+		coolOffStartTime = time.Now()
+		syncSuccess = false
+	} else {
+		syncSuccess = true
 	}
 }
 
@@ -116,7 +178,6 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 		Contacts:    raw.Contacts,
 	}
 
-	// Index templates for quick lookup
 	hTemplates := make(map[string]models.Host)
 	for _, h := range raw.Hosts {
 		if h.Register != nil && !*h.Register { hTemplates[h.ID] = h }
@@ -126,19 +187,16 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 		if s.Register != nil && !*s.Register { sTemplates[s.ID] = s }
 	}
 
-	// Dynamic group indexing
 	hGroups := make(map[string]*models.HostGroup)
 	for i := range raw.HostGroups { hGroups[raw.HostGroups[i].ID] = &raw.HostGroups[i] }
 	
 	sGroups := make(map[string]*models.ServiceGroup)
 	for i := range raw.ServiceGroups { sGroups[raw.ServiceGroups[i].ID] = &raw.ServiceGroups[i] }
 
-	// Process Hosts with inheritance and auto-grouping
 	for _, h := range raw.Hosts {
 		if h.Register == nil || *h.Register {
 			resolved := resolveHostInheritance(h, hTemplates, 0)
 			final.Hosts = append(final.Hosts, resolved)
-			
 			for _, gn := range resolved.HostGroups {
 				if group, ok := hGroups[gn]; ok {
 					group.Members = append(group.Members, resolved.ID)
@@ -149,12 +207,10 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 		}
 	}
 
-	// Process Services with inheritance and auto-grouping
 	for _, s := range raw.Services {
 		if s.Register == nil || *s.Register {
 			resolved := resolveServiceInheritance(s, sTemplates, 0)
 			final.Services = append(final.Services, resolved)
-
 			for _, gn := range resolved.ServiceGroups {
 				if group, ok := sGroups[gn]; ok {
 					group.Members = append(group.Members, fmt.Sprintf("%s,%s", resolved.HostName, resolved.ID))
@@ -165,14 +221,12 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 		}
 	}
 
-	// Reassemble groups into final config
 	for _, g := range hGroups { final.HostGroups = append(final.HostGroups, *g) }
 	for _, g := range sGroups { final.ServiceGroups = append(final.ServiceGroups, *g) }
 
 	return final, nil
 }
 
-// resolveHostInheritance merges host properties recursively from templates.
 func resolveHostInheritance(h models.Host, templates map[string]models.Host, depth int) models.Host {
 	if depth > 5 || h.Use == "" { return h }
 	if parent, ok := templates[h.Use]; ok {
@@ -186,7 +240,6 @@ func resolveHostInheritance(h models.Host, templates map[string]models.Host, dep
 	return h
 }
 
-// resolveServiceInheritance merges service properties recursively from templates.
 func resolveServiceInheritance(s models.Service, templates map[string]models.Service, depth int) models.Service {
 	if depth > 5 || s.Use == "" { return s }
 	if parent, ok := templates[s.Use]; ok {
@@ -199,7 +252,6 @@ func resolveServiceInheritance(s models.Service, templates map[string]models.Ser
 	return s
 }
 
-// broadcastToFollowers compresses and propagates definitions to all peer nodes.
 func broadcastToFollowers() {
 	var buf bytes.Buffer
 	gzw := gzip.NewWriter(&buf)
@@ -234,19 +286,6 @@ func broadcastToFollowers() {
 	}
 }
 
-// sendToScheduler pushes configuration to the central Scheduler component.
-func sendToScheduler(url string, data []byte) {
-	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		log.Printf("[WATCHER] Scheduler connection failed: %v", err)
-		syncSuccess = false
-		return
-	}
-	defer resp.Body.Close()
-	syncSuccess = (resp.StatusCode == http.StatusOK)
-}
-
-// startHotReloadLoop watches the filesystem for changes.
 func startHotReloadLoop(ctx context.Context) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil { return }

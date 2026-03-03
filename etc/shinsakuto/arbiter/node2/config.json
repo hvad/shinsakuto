@@ -1,5 +1,6 @@
 {
-  "scheduler_url": "http://127.0.0.1:8091",
+  "scheduler_urls": ["http://localhost:8081"],
+  "scheduler_cool_off_minutes": 5,
   "definitions_dir": "etc/shinsakuto/conf.d/node2",
   "api_address": "127.0.0.1",
   "api_port": 8081,
