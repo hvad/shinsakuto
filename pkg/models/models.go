@@ -22,6 +22,7 @@ type Host struct {
 	CheckCommand string   `yaml:"check_command" json:"check_command"`
 	CheckPeriod  string   `yaml:"check_period" json:"check_period"`
 	Contacts     []string `yaml:"contacts" json:"contacts"`
+	HostGroups   []string `yaml:"hostgroups" json:"hostgroups"`
 	Register     *bool    `yaml:"register" json:"register"` 
 	InDowntime   bool     `json:"in_downtime"`
 }
@@ -34,6 +35,7 @@ type Service struct {
 	CheckCommand string   `yaml:"check_command" json:"check_command"`
 	CheckPeriod  string   `yaml:"check_period" json:"check_period"`
 	Contacts     []string `yaml:"contacts" json:"contacts"`
+	ServiceGroups []string `yaml:"servicegroups" json:"servicegroups"`
 	Register     *bool    `yaml:"register" json:"register"` 
 	InDowntime   bool     `json:"in_downtime"`
 }
