@@ -14,9 +14,3 @@ services:
     normal_interval: 60
     retry_interval: 20
     max_attempts: 3
-  - id: Ping
-    host_name: localhost
-    check_command: check_http
-    normal_interval: 60
-    retry_interval: 20
-    max_attempts: 3

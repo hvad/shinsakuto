@@ -22,6 +22,7 @@ import (
 
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
+// startWatcher initializes the periodic synchronization and the HotReload loop.
 func startWatcher(ctx context.Context) {
 	refreshConfig()
 
@@ -32,11 +33,8 @@ func startWatcher(ctx context.Context) {
 			select {
 			case <-ticker.C:
 				if isLeader() {
-					log.Println("[WATCHER] Cycle de synchronisation périodique...")
+					log.Println("[WATCHER] Starting periodic synchronization cycle...")
 					refreshConfig()
-					
-					log.Println("[WATCHER] Synchronisation de la configuration de supervision...")
-					broadcastToFollowers()
 				}
 			case <-ctx.Done():
 				return
@@ -49,76 +47,54 @@ func startWatcher(ctx context.Context) {
 	}
 }
 
-//func refreshConfig() {
-//	cfg, err := loadAndProcess()
-//	if err != nil {
-//		log.Printf("[ERREUR] %v", err)
-//		return
-//	}
-//
-//	audit := RunLinter(cfg)
-//	if len(audit.Errors) > 0 {
-//		log.Printf("[LINTER] SYNCHRO REJETÉE : %d erreurs critiques", len(audit.Errors))
-//		return
-//	}
-//
-//	configMutex.Lock()
-//	currentConfig = *cfg
-//	lastSyncTime = time.Now()
-//	configMutex.Unlock()
-//
-//	data, _ := json.Marshal(cfg)
-//	url := strings.TrimSuffix(appConfig.SchedulerURL, "/") + "/v1/sync-all"
-//	
-//	// Journalisation et envoi
-//	sendToScheduler(url, data, audit.Counts)
-//}
-
-// Dans watcher.go
-
+// refreshConfig loads local files, updates internal state, and syncs with the Scheduler if Leader.
 func refreshConfig() {
-	// 1. Chargement et traitement des fichiers (commun à tous)
+	// 1. Load and process YAML files (common to all nodes for local readiness)
 	cfg, err := loadAndProcess()
 	if err != nil {
-		log.Printf("[ERREUR] %v", err)
+		log.Printf("[ERROR] Failed to load configuration: %v", err)
 		return
 	}
 
-	// 2. Mise à jour de l'état interne
+	// 2. Update internal state
 	configMutex.Lock()
 	currentConfig = *cfg
 	lastSyncTime = time.Now()
 	configMutex.Unlock()
 
-	// 3. CONDITION DE SÉCURITÉ MISE À JOUR
-	// On n'envoie au scheduler QUE si on est en solo OU si on est le leader HA
+	// 3. Security Condition: Only Leader (or Solo) sends to Scheduler
 	canSend := !appConfig.HAEnabled || isLeader()
-
 	if !canSend {
-		// Si on est un Follower, on s'arrête ici
 		return 
 	}
 
-	// 4. Envoi au Scheduler (uniquement pour Solo ou Leader)
+	// 4. Run Linter and send to Scheduler
 	audit := RunLinter(cfg)
+	if len(audit.Errors) > 0 {
+		log.Printf("[LINTER] SYNC REJECTED: %d critical errors found", len(audit.Errors))
+		return
+	}
+
 	data, _ := json.Marshal(cfg)
 	url := strings.TrimSuffix(appConfig.SchedulerURL, "/") + "/v1/sync-all"
-	
 	sendToScheduler(url, data, audit.Counts)
 
-	// 5. Si on est Leader HA, on propage aussi aux followers
+	// 5. If HA Leader, propagate files to Followers
 	if appConfig.HAEnabled && isLeader() {
 		broadcastToFollowers()
 	}
 }
 
+// loadAndProcess scans the definitions directory and handles template inheritance.
 func loadAndProcess() (*models.GlobalConfig, error) {
 	raw := &models.GlobalConfig{}
 	err := filepath.Walk(appConfig.DefinitionsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() { return err }
+		
 		if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
 			data, err := os.ReadFile(path)
 			if err != nil { return err }
+			
 			var tmp models.GlobalConfig
 			if err := yaml.Unmarshal(data, &tmp); err == nil {
 				raw.Hosts = append(raw.Hosts, tmp.Hosts...)
@@ -141,6 +117,7 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 		ServiceGroups: raw.ServiceGroups,
 	}
 
+	// Simple inheritance logic for Hosts
 	hTemplates := make(map[string]models.Host)
 	for _, h := range raw.Hosts {
 		if h.Register != nil && !*h.Register { hTemplates[h.ID] = h }
@@ -168,22 +145,22 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 }
 
 func sendToScheduler(url string, data []byte, counts ObjectCounts) {
-	log.Printf("[WATCHER] Envoi au Scheduler (%d hôtes, %d services)...", counts.Hosts, counts.Services)
+	log.Printf("[WATCHER] Sending to Scheduler (%d hosts, %d services)...", counts.Hosts, counts.Services)
 	
 	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		syncSuccess = false
-		log.Printf("[WATCHER] ERREUR : Impossible de joindre le Scheduler : %v", err)
+		log.Printf("[WATCHER] ERROR: Cannot reach Scheduler: %v", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
 		syncSuccess = true
-		log.Printf("[WATCHER] SUCCÈS : Configuration synchronisée avec succès")
+		log.Printf("[WATCHER] SUCCESS: Configuration synchronized")
 	} else {
 		syncSuccess = false
-		log.Printf("[WATCHER] ÉCHEC : Le Scheduler a répondu avec le code %d", resp.StatusCode)
+		log.Printf("[WATCHER] FAILED: Scheduler returned status code %d", resp.StatusCode)
 	}
 }
 
@@ -199,9 +176,8 @@ func startHotReloadLoop(ctx context.Context) {
 			if !ok { return }
 			if event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Create == fsnotify.Create {
 				if isLeader() {
-					log.Printf("[HOTRELOAD] Fichier modifié : %s", event.Name)
+					log.Printf("[HOTRELOAD] Change detected in: %s", event.Name)
 					refreshConfig()
-					broadcastToFollowers()
 				}
 			}
 		case <-ctx.Done():
@@ -214,6 +190,7 @@ func broadcastToFollowers() {
 	if !appConfig.HAEnabled || !isLeader() { return }
 
 	for _, nodeAddr := range appConfig.ClusterNodes {
+		// Avoid self-propagation
 		if strings.Contains(nodeAddr, appConfig.APIAddress) && strings.Contains(nodeAddr, fmt.Sprintf("%d", appConfig.APIPort)) {
 			continue
 		}
@@ -241,11 +218,11 @@ func broadcastToFollowers() {
 			url := fmt.Sprintf("http://%s/v1/cluster/sync-receiver", addr)
 			resp, err := httpClient.Post(url, "application/x-gzip", &buf)
 			if err != nil {
-				log.Printf("[HA] Erreur synchro vers %s : %v", addr, err)
+				log.Printf("[HA] Propagation error to %s: %v", addr, err)
 				return
 			}
 			resp.Body.Close()
-			log.Printf("[HA] Propagation des fichiers vers %s réussie", addr)
+			log.Printf("[HA] Files successfully propagated to %s", addr)
 		}(nodeAddr)
 	}
 }

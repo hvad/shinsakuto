@@ -6,7 +6,7 @@ import (
 	"shinsakuto/pkg/models"
 )
 
-// ObjectCounts stocke les statistiques des objets de supervision chargés et enregistrés.
+// ObjectCounts stores statistics of loaded and registered monitoring objects.
 type ObjectCounts struct {
 	Hosts         int
 	Services      int
@@ -17,14 +17,14 @@ type ObjectCounts struct {
 	ServiceGroups int
 }
 
-// LinterResult contient le résultat de l'audit, incluant les erreurs, les alertes et les compteurs.
+// LinterResult contains the audit results, including errors, warnings, and counts.
 type LinterResult struct {
 	Errors   []string
 	Warnings []string
 	Counts   ObjectCounts
 }
 
-// RunLinter exécute les vérifications sémantiques et compte les objets réels (Register != false).
+// RunLinter performs semantic checks and counts active objects (Register != false).
 func RunLinter(cfg *models.GlobalConfig) LinterResult {
 	res := LinterResult{
 		Counts: ObjectCounts{
@@ -36,12 +36,12 @@ func RunLinter(cfg *models.GlobalConfig) LinterResult {
 		},
 	}
 
-	// Map pour vérifier l'existence des hôtes lors de la validation des services
+	// Host lookup map for service validation
 	hostMap := make(map[string]bool)
 
-	// 1. Validation et décompte des Hôtes
+	// 1. Host Validation and Counting
 	for _, h := range cfg.Hosts {
-		// On ignore les templates (Register: false) pour le décompte final et la validation réseau
+		// Skip templates (Register: false) for counts and network validation
 		if h.Register != nil && !*h.Register {
 			continue
 		}
@@ -49,26 +49,24 @@ func RunLinter(cfg *models.GlobalConfig) LinterResult {
 		res.Counts.Hosts++
 
 		if h.ID == "" {
-			res.Errors = append(res.Errors, "Hôte détecté avec un ID vide")
+			res.Errors = append(res.Errors, "Host detected with an empty ID")
 			continue
 		}
 
-		// Vérification des doublons d'ID
+		// Duplicate ID check
 		if hostMap[h.ID] {
-			res.Errors = append(res.Errors, fmt.Sprintf("ID d'hôte dupliqué : %s", h.ID))
+			res.Errors = append(res.Errors, fmt.Sprintf("Duplicate host ID detected: %s", h.ID))
 		}
 		hostMap[h.ID] = true
 
-		// Validation basique de l'adresse IP/Hostname
+		// Basic IP/Hostname validation
 		if h.Address != "" && h.Address != "localhost" && net.ParseIP(h.Address) == nil {
-			// On génère un warning si l'adresse n'est ni une IP valide ni localhost
-			res.Warnings = append(res.Warnings, fmt.Sprintf("L'hôte %s possède une adresse non standard : %s", h.ID, h.Address))
+			res.Warnings = append(res.Warnings, fmt.Sprintf("Host %s uses a non-standard address format: %s", h.ID, h.Address))
 		}
 	}
 
-	// 2. Validation et décompte des Services
+	// 2. Service Validation and Counting
 	for _, s := range cfg.Services {
-		// On ignore les templates de services
 		if s.Register != nil && !*s.Register {
 			continue
 		}
@@ -76,14 +74,14 @@ func RunLinter(cfg *models.GlobalConfig) LinterResult {
 		res.Counts.Services++
 
 		if s.ID == "" {
-			res.Errors = append(res.Errors, fmt.Sprintf("Service lié à l'hôte %s sans ID", s.HostName))
+			res.Errors = append(res.Errors, fmt.Sprintf("Service linked to host %s has no ID", s.HostName))
 		}
 
-		// Vérification de la liaison Host <-> Service
+		// Validation of Host <-> Service relationship
 		if s.HostName == "" {
-			res.Errors = append(res.Errors, fmt.Sprintf("Le service %s n'est rattaché à aucun hôte (host_name vide)", s.ID))
+			res.Errors = append(res.Errors, fmt.Sprintf("Service %s is not attached to any host (host_name is empty)", s.ID))
 		} else if !hostMap[s.HostName] {
-			res.Errors = append(res.Errors, fmt.Sprintf("Le service %s référence un hôte inconnu ou non enregistré : %s", s.ID, s.HostName))
+			res.Errors = append(res.Errors, fmt.Sprintf("Service %s references an unknown or unregistered host: %s", s.ID, s.HostName))
 		}
 	}
 
