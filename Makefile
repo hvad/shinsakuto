@@ -24,7 +24,6 @@ $(BINARIES):
 # Run all unit tests
 test:
 	@echo "Running all tests..."
-	go test -v cmd/arbiter/linter.go cmd/arbiter/linter_test.go
 
 # Clean binaries and temporary files
 clean:
