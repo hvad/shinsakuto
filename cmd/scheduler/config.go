@@ -27,7 +27,7 @@ func loadConfig(path string) error {
 	return json.Unmarshal(data, &appConfig)
 }
 
-// logDebug prints detailed traces to the terminal if debug mode is on
+// logDebug prints detailed traces to the terminal and the system log if debug mode is on
 func logDebug(format string, v ...interface{}) {
 	if appConfig.Debug {
 		msg := fmt.Sprintf("[DEBUG] "+format, v...)
