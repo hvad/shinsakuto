@@ -8,26 +8,36 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
+
+	"shinsakuto/pkg/models" // Using the provided models
+)
+
+var (
+	hosts        = make(map[string]*models.Host)
+	services     = make(map[string]*models.Service)
+	mu           sync.RWMutex
+	appConfig    SchedConfig
+	statusLogger *log.Logger
+	stateChanged bool
+	httpClient   = &http.Client{Timeout: 5 * time.Second}
 )
 
 func main() {
-	startTime = time.Now()
-	configPath := flag.String("config", "config.json", "Path to the configuration file")
+	configPath := flag.String("config", "config.json", "Path to config file")
 	flag.Parse()
 
-	// 1. Load configuration parameters
+	// 1. Initial configuration and logging setup
 	if err := loadConfig(*configPath); err != nil {
-		fmt.Printf("Fatal error loading configuration: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Fatal Error: Could not load configuration: %v", err)
 	}
 
-	// 2. Initialize loggers and restore previous state
 	initLoggers()
 	loadState()
 
-	// 3. Start periodic state persistence routine
+	// 2. Periodic background save (every 1 minute)
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
 		for range ticker.C {
@@ -38,9 +48,10 @@ func main() {
 		}
 	}()
 
-	// 4. Setup API Router
+	// 3. Define HTTP API routes
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/sync-all", syncAllHandler)
+	mux.HandleFunc("/v1/pop-task", popTaskHandler)
 	mux.HandleFunc("/v1/push-result", pushResultHandler)
 	mux.HandleFunc("/v1/status", statusHandler)
 
@@ -49,26 +60,25 @@ func main() {
 		Handler: mux,
 	}
 
-	// 5. Signal handling for graceful shutdown
+	// 4. Signal handling for graceful shutdown
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("[INFO] Shinsakuto Scheduler started on %s:%d (Debug: %v)", 
-			appConfig.APIAddress, appConfig.APIPort, appConfig.Debug)
+		log.Printf("[INFO] Shinsakuto Scheduler active on port %d (Debug: %v)", appConfig.APIPort, appConfig.Debug)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed to start: %v", err)
+			log.Fatalf("Server Error: %v", err)
 		}
 	}()
 
 	<-stop
-	log.Println("[INFO] Shutting down Scheduler...")
+	log.Println("[INFO] Shutting down...")
 	
-	// Shutdown the server gracefully with a 5-second timeout
+	// Final save before exiting
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	
 	server.Shutdown(ctx)
-	saveState() // Ensure the final state is captured before exit
-	log.Println("[INFO] Shutdown complete.")
+	saveState()
+	log.Println("[INFO] Scheduler stopped safely.")
 }

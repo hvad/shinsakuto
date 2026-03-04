@@ -1,0 +1,9 @@
+{
+  "scheduler_url": "http://127.0.0.1:8091",
+  "poller_id": "poller-01",
+  "interval_ms": 500,
+  "max_concurrent": 10,
+  "debug": false,
+  "log_results": true,
+  "log_file": "var/log/poller/poller.log"
+}

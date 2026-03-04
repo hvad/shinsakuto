@@ -3,39 +3,34 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"shinsakuto/pkg/models"
+	"shinsakuto/pkg/models" // Using the provided models
 )
 
-// saveState serializes current monitoring maps to the designated state file
+// saveState serializes the current host and service status to disk
 func saveState() {
 	mu.RLock()
 	defer mu.RUnlock()
 
-	logDebug("Persisting monitoring state to %s", appConfig.StateFile)
+	logDebug("Persisting state to disk...")
 	data, err := json.MarshalIndent(map[string]interface{}{
 		"hosts":    hosts,
 		"services": services,
 	}, "", "  ")
 
-	if err != nil {
-		logDebug("Error marshaling state: %v", err)
-		return
-	}
-
-	if err := os.WriteFile(appConfig.StateFile, data, 0644); err != nil {
-		logDebug("Error writing state file: %v", err)
-	} else {
-		logDebug("State saved successfully (%d bytes)", len(data))
+	if err == nil {
+		os.WriteFile(appConfig.StateFile, data, 0644)
 	}
 }
 
-// loadState restores the monitoring engine's state from disk on startup
+// loadState restores the state from the JSON file on startup
 func loadState() {
 	mu.Lock()
 	defer mu.Unlock()
 
 	data, err := os.ReadFile(appConfig.StateFile)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	var st struct {
 		Hosts    map[string]*models.Host    `json:"hosts"`
@@ -43,8 +38,7 @@ func loadState() {
 	}
 
 	if err := json.Unmarshal(data, &st); err == nil {
-		hosts = st.Hosts
-		services = st.Services
-		logDebug("State restored: %d hosts, %d services", len(hosts), len(services))
+		hosts, services = st.Hosts, st.Services
+		logDebug("State file loaded: %d hosts, %d services restored", len(hosts), len(services))
 	}
 }

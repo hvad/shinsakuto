@@ -118,3 +118,9 @@ type Downtime struct {
 	Author    string    `json:"author"`
 	Comment   string    `json:"comment"`
 }
+
+// CheckTask represents a single execution job for a Poller
+type CheckTask struct {
+	ID      string `json:"id"`      
+	Command string `json:"command"` 
+}

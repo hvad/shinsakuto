@@ -8,15 +8,9 @@ hosts:
       - linux-servers
 
 services:
-  - id: HTTP_Check
+  - id: Ping_fake
     host_name: localhost
-    check_command: check_http
-    normal_interval: 60
-    retry_interval: 20
-    max_attempts: 3
-  - id: Ping
-    host_name: localhost
-    check_command: check_ping
+    check_command: echo 'Test'
     normal_interval: 60
     retry_interval: 20
     max_attempts: 3

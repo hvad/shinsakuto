@@ -6,53 +6,51 @@ import (
 	"encoding/json"
 	"net/http"
 	"shinsakuto/pkg/models"
+	"strings"
 	"time"
 )
 
-// handleHostResult updates host status and logs transitions
+// handleHostResult processes host check results and handles state transitions
 func handleHostResult(res models.CheckResult) {
-	h, ok := hosts[res.ID]
+	hID := strings.TrimPrefix(res.ID, "HOST:")
+	h, ok := hosts[hID]
 	if !ok {
-		logDebug("Unknown host result received: %s", res.ID)
 		return
 	}
 
 	wasUp := h.IsUp
-	h.IsUp = (res.Status == 0) // Status 0 is considered UP
-	h.Status = res.Status
-	h.Output = res.Output
+	h.IsUp = (res.Status == 0) // 0 is OK/UP
+	h.Status, h.Output = res.Status, res.Output
 
 	if wasUp != h.IsUp {
-		stateStr := "UP"
-		if !h.IsUp { stateStr = "DOWN" }
-		logDebug("STATE CHANGE: Host %s is now %s", h.ID, stateStr)
-		logStateChange("HOST", h.ID, stateStr, res.Output)
-		
+		state := "UP"
+		if !h.IsUp {
+			state = "DOWN"
+		}
+		logStateChange("HOST", h.ID, state, res.Output)
 		if !h.InDowntime {
-			notifyReactionner(h.ID, stateStr, res.Status, res.Output)
+			notifyReactionner(h.ID, state, res.Status, res.Output)
 		} else {
-			logDebug("Notification suppressed: %s is in Downtime", h.ID)
+			logDebug("Host %s alert suppressed: Active Downtime", h.ID)
 		}
 	}
 }
 
-// handleServiceResult manages service state transitions and alert logic
+// handleServiceResult processes service check results
 func handleServiceResult(res models.CheckResult) {
 	s, ok := services[res.ID]
-	if !ok { return }
+	if !ok {
+		return
+	}
 
 	oldState := s.CurrentState
-	s.CurrentState = res.Status
-	s.Output = res.Output
+	s.CurrentState, s.Output = res.Status, res.Output
 
 	if oldState != s.CurrentState {
-		labels := map[int]string{0: "OK", 1: "WARNING", 2: "CRITICAL", 3: "UNKNOWN"}
-		logDebug("STATE CHANGE: Service %s is now %s", s.ID, labels[res.Status])
-		logStateChange("SERVICE", s.ID, labels[res.Status], res.Output)
-
+		logStateChange("SERVICE", s.ID, "CHANGE", res.Output)
+		// Only alert if the service and its host are not in downtime
 		host, hostExists := hosts[s.HostName]
-		// Alert only if host is UP and no downtime is active for either entity
-		if hostExists && host.IsUp && !s.InDowntime && !host.InDowntime {
+		if !s.InDowntime && (!hostExists || !host.InDowntime) {
 			notifyReactionner(s.ID, "ALERT", res.Status, res.Output)
 		}
 	}
@@ -60,30 +58,18 @@ func handleServiceResult(res models.CheckResult) {
 
 // notifyReactionner sends alert payloads asynchronously to the Reactionner
 func notifyReactionner(id, t string, state int, out string) {
-	logDebug("Triggering notification for %s (%s)", id, t)
-	notification := models.NotificationRequest{
-		EntityID:  id,
-		Type:      t,
-		State:     state,
-		Output:    out,
-		Timestamp: time.Now(),
-	}
-	
-	payload, _ := json.Marshal(notification)
-	
+	logDebug("Triggering notification for %s", id)
+	payload, _ := json.Marshal(models.NotificationRequest{
+		EntityID: id, Type: t, State: state, Output: out, Timestamp: time.Now(),
+	})
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
 		req, _ := http.NewRequestWithContext(ctx, "POST", appConfig.ReactionnerURL, bytes.NewBuffer(payload))
 		req.Header.Set("Content-Type", "application/json")
-		
 		resp, err := httpClient.Do(req)
-		if err != nil {
-			logDebug("Failed to contact Reactionner: %v", err)
-			return
+		if err == nil {
+			resp.Body.Close()
 		}
-		logDebug("Reactionner accepted notification for %s (Status: %d)", id, resp.StatusCode)
-		resp.Body.Close()
 	}()
 }
