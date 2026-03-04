@@ -5,7 +5,7 @@ GO_FILES=$(shell find . -name "*.go")
 
 # List of binaries to build based on folders in cmd/
 #BINARIES=arbiter scheduler poller reactionner
-BINARIES=arbiter
+BINARIES=arbiter scheduler
 
 .PHONY: all build test clean run-scheduler run-poller
 
