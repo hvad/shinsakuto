@@ -1,5 +1,5 @@
 {
-  "scheduler_urls": ["http://localhost:8091"],
+  "scheduler_urls": ["http://localhost:8091", "http://localhost:8092"],
   "scheduler_cool_off_minutes": 5,
   "definitions_dir": "./etc/shinsakuto/conf.d/solo",
   "api_address": "0.0.0.0",
