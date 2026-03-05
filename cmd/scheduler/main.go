@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"shinsakuto/pkg/models"
+	"shinsakuto/pkg/models" // Using the provided models
 )
 
 var (
@@ -27,16 +27,16 @@ var (
 )
 
 func main() {
-	configPath := flag.String("config", "config.json", "Path to config file")
+	configPath := flag.String("config", "config.json", "Path to configuration file")
 	daemonMode := flag.Bool("d", false, "Run as a daemon in the background")
 	flag.Parse()
 
-	// Handle Daemonization logic
+	// Handle Linux Daemonization
 	if *daemonMode {
 		args := os.Args[1:]
-		// Filter out the -d flag to prevent infinite recursion in the child process
 		newArgs := make([]string, 0)
 		for _, arg := range args {
+			// Ensure the child process doesn't try to daemonize again
 			if arg != "-d" {
 				newArgs = append(newArgs, arg)
 			}
@@ -52,60 +52,60 @@ func main() {
 		os.Exit(0)
 	}
 
-	// 1. Initial configuration and logging setup
+	// 1. Configuration and logging setup
 	if err := loadConfig(*configPath); err != nil {
-		fmt.Printf("Fatal Error: Could not load configuration: %v\n", err)
+		fmt.Printf("Fatal: Could not load configuration: %v\n", err)
 		os.Exit(1)
 	}
 
 	initLoggers()
-	loadState() //
+	loadState() // Restore previous state from disk
 
-	// 2. Periodic background save (every 1 minute)
+	// 2. Periodic background save cycle
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
 		for range ticker.C {
 			if stateChanged {
-				saveState() //
+				saveState() // Persistent storage of monitored object states
 				stateChanged = false
 			}
 		}
 	}()
 
-	// 3. Define HTTP API routes
+	// 3. API Route Registration
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/sync-all", syncAllHandler)   //
-	mux.HandleFunc("/v1/pop-task", popTaskHandler)   //
-	mux.HandleFunc("/v1/push-result", pushResultHandler) //
-	mux.HandleFunc("/v1/status", statusHandler)     //
+	mux.HandleFunc("/v1/sync-all", syncAllHandler)   // Arbiter sync endpoint
+	mux.HandleFunc("/v1/pop-task", popTaskHandler)   // Poller task request
+	mux.HandleFunc("/v1/push-result", pushResultHandler) // Poller result submission
+	mux.HandleFunc("/v1/status", statusHandler)     // Health and status endpoint
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", appConfig.APIAddress, appConfig.APIPort),
 		Handler: mux,
 	}
 
-	// 4. Signal handling for graceful shutdown
+	// 4. Graceful Shutdown Management
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("[INFO] Shinsakuto Scheduler active on port %d (Debug: %v)", appConfig.APIPort, appConfig.Debug)
+		log.Printf("[INFO] Scheduler active on port %d (Daemon: %v)", appConfig.APIPort, *daemonMode)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server Error: %v", err)
 		}
 	}()
 
 	<-stop
-	log.Println("[INFO] Shutting down...")
+	log.Println("[INFO] Shutting down gracefully...")
 	
-	// Final save before exiting
+	// Finalize server operations with a timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	
 	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("[ERROR] Server forced to shutdown: %v", err)
+		log.Printf("[ERROR] Shutdown failed: %v", err)
 	}
-	
-	saveState() //
+
+	saveState() // Final state persistence before exit
 	log.Println("[INFO] Scheduler stopped safely.")
 }

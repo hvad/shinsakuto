@@ -9,20 +9,18 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"shinsakuto/pkg/models" 
+	"shinsakuto/pkg/models"
 	"time"
 )
 
 func main() {
-	// Define command-line flags
-	configPath := flag.String("config", "config.json", "Path to poller config")
-	daemonMode := flag.Bool("d", false, "Run as a daemon in the background")
+	configPath := flag.String("config", "config.json", "Path to poller configuration")
+	daemonMode := flag.Bool("d", false, "Run poller in background (daemon mode)")
 	flag.Parse()
 
-	// Handle Daemonization: Re-execute the binary in the background
+	// Handle Linux Daemonization (-d)
 	if *daemonMode {
 		args := os.Args[1:]
-		// Filter out the -d flag to prevent recursive spawning
 		newArgs := make([]string, 0)
 		for _, arg := range args {
 			if arg != "-d" {
@@ -40,51 +38,55 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Load configuration and initialize dual-logging
+	// Load local configuration
 	if err := loadConfig(*configPath); err != nil {
-		fmt.Printf("Fatal: Configuration error: %v\n", err)
+		fmt.Printf("Fatal Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	log.Printf("[INFO] Poller %s started. Connecting to %s", appConfig.PollerID, appConfig.SchedulerURL)
+	log.Printf("[INFO] Poller %s initialized with %d Scheduler targets", appConfig.PollerID, len(appConfig.SchedulerURLs))
 
-	// Semaphore to strictly limit concurrent check executions
+	// Concurrency control using a buffered channel as a semaphore
 	sem := make(chan struct{}, appConfig.MaxConcurrent)
 
 	for {
-		// 1. Pull a task from the Scheduler
-		task, err := pullTask()
-		if err != nil {
-			logDebug("Queue empty or connection issue: %v", err)
-			// Wait for the configured interval before retrying
-			time.Sleep(time.Duration(appConfig.Interval) * time.Millisecond)
-			continue
+		// Client-side Load Balancing: Iterate through all available Scheduler IPs
+		for _, schedulerURL := range appConfig.SchedulerURLs {
+			task, err := pullTaskFromURL(schedulerURL)
+			if err != nil {
+				// Skip this scheduler if it's down or has no tasks for its shard
+				continue 
+			}
+
+			// Task successfully retrieved
+			sem <- struct{}{}
+			go func(t models.CheckTask, originURL string) {
+				defer func() { <-sem }()
+				
+				// Execute the check command
+				result := executeTask(t)
+				
+				// Push the result back to the specific Scheduler that issued the task
+				pushResultToURL(result, originURL)
+			}(task, schedulerURL)
 		}
 
-		// 2. Execute the task using the worker pool
-		sem <- struct{}{} // Acquire concurrency slot
-		go func(t models.CheckTask) {
-			defer func() { <-sem }() // Release slot when finished
-			result := executeTask(t)
-			pushResult(result)
-		}(task)
-
-		// Short sleep to prevent high CPU usage in the polling loop
-		time.Sleep(10 * time.Millisecond)
+		// Wait for the configured interval before the next polling rotation
+		time.Sleep(time.Duration(appConfig.Interval) * time.Millisecond)
 	}
 }
 
-// pullTask fetches a pending check from the Scheduler
-func pullTask() (models.CheckTask, error) {
-	url := fmt.Sprintf("%s/v1/pop-task", appConfig.SchedulerURL)
+// pullTaskFromURL attempts to fetch a single task from a specific Scheduler endpoint
+func pullTaskFromURL(baseURL string) (models.CheckTask, error) {
+	url := fmt.Sprintf("%s/v1/pop-task", baseURL)
 	resp, err := httpClient.Get(url)
 	if err != nil {
 		return models.CheckTask{}, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNoContent {
-		return models.CheckTask{}, fmt.Errorf("no tasks pending")
+	if resp.StatusCode != http.StatusOK {
+		return models.CheckTask{}, fmt.Errorf("no tasks available (Status: %d)", resp.StatusCode)
 	}
 
 	var task models.CheckTask
@@ -92,16 +94,16 @@ func pullTask() (models.CheckTask, error) {
 	return task, err
 }
 
-// pushResult returns the execution result to the Scheduler
-func pushResult(res models.CheckResult) {
-	url := fmt.Sprintf("%s/v1/push-result", appConfig.SchedulerURL)
-	data, _ := json.Marshal(res)
+// pushResultToURL sends the outcome of a check to the originating Scheduler
+func pushResultToURL(res models.CheckResult, baseURL string) {
+	url := fmt.Sprintf("%s/v1/push-result", baseURL)
+	payload, _ := json.Marshal(res)
 	
-	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(data))
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(payload))
 	if err == nil {
 		defer resp.Body.Close()
-		logDebug("Successfully pushed result for %s", res.ID)
+		logDebug("Successfully pushed result for %s to %s", res.ID, baseURL)
 	} else {
-		logDebug("Failed to push result for %s: %v", res.ID, err)
+		logDebug("Failed to push result for %s to %s: %v", res.ID, baseURL, err)
 	}
 }
