@@ -35,11 +35,11 @@ func startAPI() {
 	log.Printf("[API] Arbiter API server listening on %s", addr)
 
 	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatalf("[FATAL] API server failed: %v", err)
+		log.Fatalf("[FATAL] Arbiter API server failed: %v", err)
 	}
 }
 
-// handleMetrics serves hardware and business metrics in a format easy to parse for Shinken/Nagios.
+// handleMetrics serves hardware and business metrics in Prometheus-style format.
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	stats := getSystemMetrics()
@@ -58,7 +58,7 @@ func handleMetrics(w http.ResponseWriter, r *http.Request) {
 	configMutex.RUnlock()
 }
 
-// handleStatus returns JSON information about the node's current state.
+// handleStatus returns JSON information about the node's current sharding state.
 func handleStatus(w http.ResponseWriter, r *http.Request) {
 	configMutex.RLock()
 	defer configMutex.RUnlock()
@@ -69,21 +69,23 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res := map[string]interface{}{
-		"node_id":   appConfig.RaftNodeID,
-		"role":      role,
-		"last_sync": lastSyncTime.Format(time.RFC3339),
-		"sync_ok":   syncSuccess,
+		"node_id":         appConfig.RaftNodeID,
+		"role":            role,
+		"last_sync":       lastSyncTime.Format(time.RFC3339),
+		"sync_ok":         syncSuccess,
+		"scheduler_count": len(appConfig.SchedulerURLs),
+		"is_sharded":      len(appConfig.SchedulerURLs) > 1,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
 }
 
-// handleDowntime manages the registration and listing of maintenance windows.
+// handleDowntime manages the registration of maintenance windows.
 func handleDowntime(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		if !isLeader() {
-			http.Error(w, "Forbidden: This node is not the Raft Leader", http.StatusForbidden)
+			http.Error(w, "Forbidden: This arbiter node is not the Raft Leader", http.StatusForbidden)
 			return
 		}
 
@@ -116,7 +118,7 @@ func handleDowntime(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(downtimes)
 }
 
-// handleClusterSync receives a TGZ archive from the Leader and extracts it localy.
+// handleClusterSync receives a TGZ archive from the Leader and extracts it locally.
 func handleClusterSync(w http.ResponseWriter, r *http.Request) {
 	if isLeader() || !appConfig.HAEnabled {
 		http.Error(w, "Rejected", http.StatusForbidden)

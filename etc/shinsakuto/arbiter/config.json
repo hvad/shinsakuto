@@ -1,10 +1,11 @@
 {
-  "scheduler_urls": ["http://localhost:8081"],
+  "scheduler_urls": ["http://localhost:8091"],
   "scheduler_cool_off_minutes": 5,
   "definitions_dir": "./etc/shinsakuto/conf.d/solo",
   "api_address": "0.0.0.0",
   "api_port": 8080,
-  "log_file": "var/log/arbiter.log",
+  "debug": true,
+  "log_file": "var/log/arbiter/arbiter.log",
   "hot_reload": true,
   "hot_reload_debounce": 5,
   "sync_interval": 60

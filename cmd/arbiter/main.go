@@ -18,7 +18,7 @@ func main() {
 	flag.Parse()
 
 	if err := loadArbiterLocalConfig(*cfgPath); err != nil {
-		log.Fatalf("[FATAL] Failed to load configuration: %v", err)
+		log.Fatalf("[FATAL] Arbiter : Failed to load configuration: %v", err)
 	}
 
 	// 3. Verification Mode (-v)
@@ -33,7 +33,7 @@ func main() {
 		audit := RunLinter(cfg)
 
 		fmt.Println("\n-------------------------------------------")
-		fmt.Println(" SHINSAKUTO CONFIGURATION REPORT")
+		fmt.Println(" Shinsakuto Configuration Report")
 		fmt.Println("-------------------------------------------")
 		fmt.Printf(" Active Hosts:          %d\n", audit.Counts.Hosts)
 		fmt.Printf(" Active Services:       %d\n", audit.Counts.Services)
@@ -52,11 +52,11 @@ func main() {
 			for _, e := range audit.Errors {
 				fmt.Printf("[ERROR] %s\n", e)
 			}
-			fmt.Println("\nResult: INVALID CONFIGURATION")
+			fmt.Println("\nResult: Invalid Configuration")
 			os.Exit(1)
 		}
 
-		fmt.Println("\nResult: CONFIGURATION VALID")
+		fmt.Println("\nResult: Configuration Valid")
 		os.Exit(0)
 	}
 
@@ -64,7 +64,7 @@ func main() {
 	if *daemon {
 		cmd := exec.Command(os.Args[0], "-config", *cfgPath)
 		if err := cmd.Start(); err != nil {
-			log.Fatalf("[ERROR] Failed to start daemon: %v", err)
+			log.Fatalf("[ERROR] Arbiter failed to start daemon: %v", err)
 		}
 		fmt.Printf("Arbiter started in background (PID: %d)\n", cmd.Process.Pid)
 		os.Exit(0)
@@ -77,7 +77,7 @@ func main() {
 			log.Fatalf("[FATAL] Raft error: %v", err)
 		}
 	} else {
-		log.Println("[INFO] Solo Mode (High Availability disabled)")
+		log.Println("[INFO] Arbiter solo mode")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -86,8 +86,8 @@ func main() {
 	go startWatcher(ctx)
 	go startAPI()
 
-	log.Printf("[MAIN] Arbiter operational on port %d", appConfig.APIPort)
+	log.Printf("[START] Arbiter operational on port %d", appConfig.APIPort)
 	
 	<-ctx.Done()
-	log.Println("[MAIN] Shutting down Arbiter...")
+	log.Println("[STOP] Shutting down Arbiter...")
 }

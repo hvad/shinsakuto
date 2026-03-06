@@ -55,7 +55,7 @@ func loadArbiterLocalConfig(path string) error {
 		appConfig.SchedulerCoolOffMinutes = 5
 	}
 
-	// Setup logging output
+	// Setup logging output to both terminal and file
 	var logWriter io.Writer = os.Stdout
 	if appConfig.LogFile != "" {
 		f, err := os.OpenFile(appConfig.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)

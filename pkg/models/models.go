@@ -25,27 +25,57 @@ type Host struct {
 	HostGroups   []string `yaml:"hostgroups" json:"hostgroups"`
 	Register     *bool    `yaml:"register" json:"register"` 
 	InDowntime   bool     `json:"in_downtime"`
+	Parents      []string `yaml:"parents" json:"parents"`
+	// Runtime State Fields
+	IsUp         bool      `json:"is_up"`     
+	Status       int       `json:"status"`    
+	NextCheck    time.Time `json:"next_check"`
+	Output       string    `json:"output"`
 }
 
 // Service represents a specific check linked to a host
 type Service struct {
-	ID           string   `yaml:"id" json:"id"`
-	Use          string   `yaml:"use" json:"use"` 
-	HostName     string   `yaml:"host_name" json:"host_name"`
-	CheckCommand string   `yaml:"check_command" json:"check_command"`
-	CheckPeriod  string   `yaml:"check_period" json:"check_period"`
-	Contacts     []string `yaml:"contacts" json:"contacts"`
+	ID            string   `yaml:"id" json:"id"`
+	Use           string   `yaml:"use" json:"use"` 
+	HostName      string   `yaml:"host_name" json:"host_name"`
+	CheckCommand  string   `yaml:"check_command" json:"check_command"`
+	CheckPeriod   string   `yaml:"check_period" json:"check_period"`
+	Contacts      []string `yaml:"contacts" json:"contacts"`
 	ServiceGroups []string `yaml:"servicegroups" json:"servicegroups"`
-	Register     *bool    `yaml:"register" json:"register"` 
-	InDowntime   bool     `json:"in_downtime"`
+	Register      *bool    `yaml:"register" json:"register"` 
+	InDowntime    bool     `json:"in_downtime"`
+	// Runtime State Fields
+	CurrentState  int       `json:"current_state"`
+	Attempts      int       `json:"attempts"`
+	MaxAttempts   int       `json:"max_attempts"`
+	NextCheck     time.Time `json:"next_check"`
+	Output        string    `json:"output"`
 }
 
+// CheckResult is sent by Pollers to the Scheduler
+type CheckResult struct {
+	ID     string `json:"id"`
+	Status int    `json:"status"`
+	Output string `json:"output"`
+}
+
+// NotificationRequest is sent to the Reactionner
+type NotificationRequest struct {
+	EntityID  string    `json:"entity_id"`
+	Type      string    `json:"type"`
+	State     int       `json:"state"`
+	Output    string    `json:"output"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// Host group
 type HostGroup struct {
 	ID      string   `yaml:"id" json:"id"`
 	Alias   string   `yaml:"alias" json:"alias"`
 	Members []string `yaml:"members" json:"members"`
 }
 
+// Service group
 type ServiceGroup struct {
 	ID      string   `yaml:"id" json:"id"`
 	Alias   string   `yaml:"alias" json:"alias"`
@@ -87,4 +117,10 @@ type Downtime struct {
 	EndTime   time.Time `json:"end_time"`
 	Author    string    `json:"author"`
 	Comment   string    `json:"comment"`
+}
+
+// CheckTask represents a single execution job for a Poller
+type CheckTask struct {
+	ID      string `json:"id"`      
+	Command string `json:"command"` 
 }

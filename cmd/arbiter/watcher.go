@@ -39,7 +39,7 @@ func startWatcher(ctx context.Context) {
 			select {
 			case <-ticker.C:
 				if isLeader() {
-					log.Println("[WATCHER] Periodic cluster-wide configuration sync triggered by leader")
+					log.Println("[WATCHER] Periodic sharding sync triggered by leader")
 					refreshConfig()
 				}
 			case <-ctx.Done():
@@ -53,16 +53,16 @@ func startWatcher(ctx context.Context) {
 	}
 }
 
-// refreshConfig triggers a full reload, validation, and propagation cycle.
+// refreshConfig triggers a full reload, sharding partition, and propagation cycle.
 func refreshConfig() {
-	// Check if we are in the safety cool-off period after consecutive failures
+	// Check if we are in the safety cool-off period
 	if isInCoolOff {
 		coolOffDuration := time.Duration(appConfig.SchedulerCoolOffMinutes) * time.Minute
 		if time.Since(coolOffStartTime) < coolOffDuration {
-			log.Printf("[WATCHER] Sync skipped: system is in cool-off period until %v", coolOffStartTime.Add(coolOffDuration).Format("15:04:05"))
+			log.Printf("[WATCHER] Sync skipped: system is in cool-off until %v", coolOffStartTime.Add(coolOffDuration).Format("15:04:05"))
 			return
 		}
-		isInCoolOff = false // Reset cool-off if the time has passed
+		isInCoolOff = false 
 	}
 
 	cfg, err := loadAndProcess()
@@ -76,7 +76,7 @@ func refreshConfig() {
 	lastSyncTime = time.Now()
 	configMutex.Unlock()
 
-	// Only the Leader is allowed to push to Schedulers and Followers
+	// Only the Leader is allowed to push shards to Schedulers
 	if !isLeader() {
 		return
 	}
@@ -89,62 +89,103 @@ func refreshConfig() {
 		return
 	}
 
-	// 1. Push validated configuration to the list of Schedulers with Retry Logic
-	data, _ := json.Marshal(cfg)
-	go syncToAllSchedulers(data)
+	// Partition the configuration into shards based on the number of schedulers
+	shards := partitionConfig(cfg, len(appConfig.SchedulerURLs))
+	
+	// Push unique shards to each Scheduler with Retry Logic
+	go syncShardsToSchedulers(shards)
 
-	// 2. Propagate configuration files to all HA Follower nodes
+	// Propagate configuration files to all HA Follower nodes
 	if appConfig.HAEnabled {
 		broadcastToFollowers()
 	}
 }
 
-// syncToAllSchedulers iterates over the scheduler list and handles retries.
-func syncToAllSchedulers(data []byte) {
+// partitionConfig splits the GlobalConfig into N unique shards.
+func partitionConfig(fullCfg *models.GlobalConfig, n int) []models.GlobalConfig {
+	if n <= 1 {
+		return []models.GlobalConfig{*fullCfg}
+	}
+
+	shards := make([]models.GlobalConfig, n)
+	for i := 0; i < n; i++ {
+		// Commands, Periods, and Contacts are mirrored to all shards for contextual integrity
+		shards[i] = models.GlobalConfig{
+			Commands:    fullCfg.Commands,
+			TimePeriods: fullCfg.TimePeriods,
+			Contacts:    fullCfg.Contacts,
+			Hosts:       []models.Host{},
+			Services:    []models.Service{},
+		}
+	}
+
+	// Distribute Hosts using Round-Robin sharding
+	hostToShard := make(map[string]int)
+	for i, host := range fullCfg.Hosts {
+		shardIdx := i % n
+		shards[shardIdx].Hosts = append(shards[shardIdx].Hosts, host)
+		hostToShard[host.ID] = shardIdx
+	}
+
+	// Distribute Services to the same shard as their Host to prevent cross-node logic errors
+	for _, service := range fullCfg.Services {
+		if idx, ok := hostToShard[service.HostName]; ok {
+			shards[idx].Services = append(shards[idx].Services, service)
+		}
+	}
+
+	return shards
+}
+
+// syncShardsToSchedulers iterates over scheduler URLs and pushes their respective shards.
+func syncShardsToSchedulers(shards []models.GlobalConfig) {
 	successCount := 0
 	totalSchedulers := len(appConfig.SchedulerURLs)
 
 	if totalSchedulers == 0 {
-		log.Println("[WATCHER] Warning: No Scheduler URLs configured")
+		log.Println("[WATCHER] WARNING: No Scheduler URLs configured")
 		return
 	}
 
-	for _, rawURL := range appConfig.SchedulerURLs {
+	for i, rawURL := range appConfig.SchedulerURLs {
+		if i >= len(shards) { break }
+		
 		url := strings.TrimSuffix(rawURL, "/") + "/v1/sync-all"
+		data, _ := json.Marshal(shards[i])
 		
 		// Retry logic: 3 attempts per scheduler
-		for i := 1; i <= 3; i++ {
-			log.Printf("[WATCHER] Sending config to %s (Attempt %d/3)", url, i)
+		for attempt := 1; attempt <= 3; attempt++ {
+			log.Printf("[WATCHER] Sending shard %d to %s (Attempt %d/3)", i, url, attempt)
 			
 			resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(data))
 			if err == nil && resp.StatusCode == http.StatusOK {
 				resp.Body.Close()
-				log.Printf("[WATCHER] Successfully synchronized with Scheduler: %s", url)
+				log.Printf("[WATCHER] Successfully synchronized shard %d with %s", i, url)
 				successCount++
-				break // Success, move to next scheduler
+				break 
 			}
 
 			if err != nil {
-				log.Printf("[WATCHER] Attempt %d failed for %s: %v", i, url, err)
+				log.Printf("[WATCHer] Attempt %d failed for %s: %v", attempt, url, err)
 			} else {
-				log.Printf("[WATCHER] Attempt %d failed for %s: Status %d", i, url, resp.StatusCode)
+				log.Printf("[WATCHER] Attempt %d failed for %s: Status %d", attempt, url, resp.StatusCode)
 				resp.Body.Close()
 			}
 
-			if i < 3 {
-				time.Sleep(5 * time.Second) // Interval between retries
+			if attempt < 3 {
+				time.Sleep(5 * time.Second) 
 			}
 		}
 	}
 
-	// If 0 schedulers were reached after all retries, enter cool-off period
+	// Handle critical failure if no schedulers were reached
 	if successCount == 0 {
 		log.Printf("[WATCHER] FATAL: Failed to reach any Scheduler. Entering cool-off for %d minutes", appConfig.SchedulerCoolOffMinutes)
 		isInCoolOff = true
 		coolOffStartTime = time.Now()
 		syncSuccess = false
 	} else {
-		syncSuccess = true
+		syncSuccess = (successCount == totalSchedulers)
 	}
 }
 
@@ -295,7 +336,7 @@ func startHotReloadLoop(ctx context.Context) {
 		select {
 		case ev := <-w.Events:
 			if (ev.Op&fsnotify.Write == fsnotify.Write || ev.Op&fsnotify.Create == fsnotify.Create) && isLeader() {
-				log.Printf("[HOTRELOAD] Change detected in %s, re-syncing cluster", ev.Name)
+				log.Printf("[HOTRELOAD] Change detected in %s, re-syncing shards", ev.Name)
 				refreshConfig()
 			}
 		case <-ctx.Done():

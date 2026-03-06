@@ -4,3 +4,9 @@ commands:
     
   - id: check_http
     command_line: "/opt/local/bin/curl -s $ADDRESS$ --output /dev/null"
+
+  - id: check_ping_fake
+    command_line: "echo 'Ping $ADDRESS$'"
+    
+  - id: check_http_fake
+    command_line: "echo 'Curl $ADDRESS$'"
