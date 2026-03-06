@@ -1,5 +1,5 @@
 {
-  "api_port": 8083,
+  "api_port": 8070,
   "debug": true,
   "system_log": "var/log/reactionner/system_reactionner.log",
   "alerts_log": "var/log/reactionner/alerts_history.log",

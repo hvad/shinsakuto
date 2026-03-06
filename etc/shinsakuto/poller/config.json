@@ -1,13 +1,11 @@
 {
   "scheduler_urls": [
-    "http://10.0.0.1:8081",
-    "http://10.0.0.2:8081",
-    "http://10.0.0.3:8081"
+    "http://127.0.0.1:8091"
   ],
   "poller_id": "poller-01",
   "interval_ms": 500,
   "max_concurrent": 10,
-  "debug": false,
+  "debug": true,
   "log_results": true,
   "log_file": "var/log/poller/poller.log"
 }
