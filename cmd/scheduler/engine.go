@@ -73,3 +73,20 @@ func notifyReactionner(id, t string, state int, out string) {
 		}
 	}()
 }
+
+// forwardToBroker send result to broker asynchronously
+func forwardToBroker(res models.CheckResult) {
+	if !appConfig.BrokerEnabled || appConfig.BrokerURL == "" {
+		return
+	}
+
+	go func() {
+		payload, _ := json.Marshal(res)
+		resp, err := httpClient.Post(appConfig.BrokerURL+"/v1/broker/data", "application/json", bytes.NewBuffer(payload))
+		if err != nil {
+			logDebug("[BROKER] Erreur d'envoi: %v", err)
+			return
+		}
+		resp.Body.Close()
+	}()
+}

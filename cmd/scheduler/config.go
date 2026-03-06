@@ -12,6 +12,8 @@ type SchedConfig struct {
 	APIAddress     string `json:"api_address"`
 	APIPort        int    `json:"api_port"`
 	ReactionnerURL string `json:"reactionner_url"`
+	BrokerEnabled  bool   `json:"broker_enabled"`
+	BrokerURL      string `json:"broker_url"`
 	StateFile      string `json:"state_file"`
 	SystemLog      string `json:"system_log"`
 	HistoryLog     string `json:"history_log"`
