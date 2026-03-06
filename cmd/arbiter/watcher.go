@@ -143,7 +143,7 @@ func syncShardsToSchedulers(shards []models.GlobalConfig) {
 	totalSchedulers := len(appConfig.SchedulerURLs)
 
 	if totalSchedulers == 0 {
-		log.Println("[WATCHER] Warning: No Scheduler URLs configured")
+		log.Println("[WATCHER] WARNING: No Scheduler URLs configured")
 		return
 	}
 

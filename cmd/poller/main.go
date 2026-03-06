@@ -30,7 +30,7 @@ func main() {
 
 		cmd := exec.Command(os.Args[0], newArgs...)
 		if err := cmd.Start(); err != nil {
-			fmt.Printf("[ERROR] Failed to start daemon: %v\n", err)
+			fmt.Printf("[ERROR] Poller: Failed to start daemon: %v\n", err)
 			os.Exit(1)
 		}
 		

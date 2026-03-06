@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"shinsakuto/pkg/models" // Using the provided models
+	"shinsakuto/pkg/models"
 )
 
 var (

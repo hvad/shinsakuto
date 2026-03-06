@@ -35,7 +35,7 @@ func startAPI() {
 	log.Printf("[API] Arbiter API server listening on %s", addr)
 
 	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatalf("[FATAL] API server failed: %v", err)
+		log.Fatalf("[FATAL] Arbiter API server failed: %v", err)
 	}
 }
 
@@ -85,7 +85,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 func handleDowntime(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		if !isLeader() {
-			http.Error(w, "Forbidden: This node is not the Raft Leader", http.StatusForbidden)
+			http.Error(w, "Forbidden: This arbiter node is not the Raft Leader", http.StatusForbidden)
 			return
 		}
 

@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"shinsakuto/pkg/models" // Using the provided models
+	"shinsakuto/pkg/models"
 )
 
 // saveState serializes the current host and service status to disk

@@ -46,7 +46,7 @@ func loadConfig(path string) error {
 		if err == nil {
 			logWriter = io.MultiWriter(os.Stdout, f)
 		} else {
-			fmt.Printf("[ERROR] Failed to open log file: %v\n", err)
+			fmt.Printf("[ERROR] Poller: Failed to open log file: %v\n", err)
 		}
 	}
 

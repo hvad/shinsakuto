@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"shinsakuto/pkg/models" //
+	"shinsakuto/pkg/models"
 	"sync"
 	"time"
 )
@@ -47,7 +47,7 @@ func main() {
 	http.HandleFunc("/v1/ack", ackHandler)
 	http.HandleFunc("/v1/status", statusHandler)
 
-	systemLogger.Printf("[System] Reactionner ready on port %d", appConfig.APIPort)
+	systemLogger.Printf("[INFO] Reactionner ready on port %d", appConfig.APIPort)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", appConfig.APIPort), nil))
 }
 
