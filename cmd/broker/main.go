@@ -4,28 +4,32 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"shinsakuto/pkg/models"
+	"shinsakuto/pkg/logger"
 )
 
-// dataQueue is the internal asynchronous buffer
+// dataQueue is the internal asynchronous buffer for incoming check results
 var dataQueue = make(chan models.CheckResult, 50000)
 
 func main() {
-	configPath := flag.String("config", "broker.json", "Path to broker configuration file")
+	configPath := flag.String("c", "config.json", "Path to broker configuration file")
 	daemonMode := flag.Bool("d", false, "Run as a background daemon")
 	flag.Parse()
 
-	// Load configuration
+	// 1. Load configuration
 	if err := loadConfig(*configPath); err != nil {
-		log.Fatalf("Fatal: Could not load config: %v", err)
+		// Use standard fmt because logger is not initialized yet
+		fmt.Fprintf(os.Stderr, "Fatal: Could not load config: %v\n", err)
+		os.Exit(1)
 	}
+
+	// 2. Initialize the centralized logger
 	initLogger()
 
-	// Handle Linux Daemonization
+	// 3. Handle Linux Daemonization
 	if *daemonMode {
 		args := os.Args[1:]
 		newArgs := make([]string, 0)
@@ -36,23 +40,24 @@ func main() {
 		}
 		cmd := exec.Command(os.Args[0], newArgs...)
 		if err := cmd.Start(); err != nil {
-			fmt.Printf("Error: Failed to daemonize: %v\n", err)
-			os.Exit(1)
+			logger.Fatal("Failed to daemonize process: %v", err)
 		}
+		// Feedback is printed to terminal before exit
 		fmt.Printf("[INFO] Shinsakuto Broker starting in background (PID: %d)\n", cmd.Process.Pid)
 		os.Exit(0)
 	}
 
-	// Start database worker pool
+	// 4. Start database worker pool
 	startWorkers(dataQueue)
 
-	// API Route for Schedulers to push data
+	// 5. Setup API Route for Schedulers to push data
 	http.HandleFunc("/v1/broker/data", handleIngestion)
 
-	log.Printf("[INFO] Shinsakuto Broker listening on port %d", appConfig.APIPort)
+	logger.Info("Shinsakuto Broker listening on port %d", appConfig.APIPort)
 	serverAddr := fmt.Sprintf(":%d", appConfig.APIPort)
+	
 	if err := http.ListenAndServe(serverAddr, nil); err != nil {
-		log.Fatalf("Fatal: API server failed: %v", err)
+		logger.Fatal("API server failed: %v", err)
 	}
 }
 
@@ -69,12 +74,13 @@ func handleIngestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Non-blocking write to the queue
 	select {
 	case dataQueue <- res:
+		// Data accepted into the queue
 		w.WriteHeader(http.StatusAccepted)
 	default:
-		log.Printf("[WARN] Broker queue full! Dropping data for %s", res.ID)
+		// Queue is full, drop data to prevent memory exhaustion
+		logger.Info("Broker queue full! Dropping data for %s", res.ID)
 		http.Error(w, "Broker overloaded", http.StatusServiceUnavailable)
 	}
 }

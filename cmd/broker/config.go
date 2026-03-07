@@ -2,9 +2,9 @@ package main
 
 import (
 	"encoding/json"
-	"io"
-	"log"
 	"os"
+
+	"shinsakuto/pkg/logger"
 )
 
 // BrokerConfig defines the settings for data ingestion and storage
@@ -15,13 +15,13 @@ type BrokerConfig struct {
 	BatchSize       int    `json:"batch_size"`         // Number of points per write operation
 	FlushIntervalMS int    `json:"flush_interval_ms"`  // Max time before forcing a database write
 	WorkerCount     int    `json:"worker_count"`       // Number of concurrent database writers
-	SystemLog       string `json:"system_log"`         // Path to the system log file
-	Debug           bool   `json:"debug"`              // Enable verbose logging
+	LogFile         string `json:"log_file"`           // Path to the broker log file
+	Debug           bool   `json:"debug"`              // Enable verbose terminal output
 }
 
 var appConfig BrokerConfig
 
-// loadConfig reads the JSON configuration file
+// loadConfig reads and parses the JSON configuration file
 func loadConfig(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -30,21 +30,10 @@ func loadConfig(path string) error {
 	return json.Unmarshal(data, &appConfig)
 }
 
-// initLogger sets up logging to both stdout and a file if specified
+// initLogger initializes the centralized logger with broker settings.
+// It delegates the logic to the shared pkg/logger.
 func initLogger() {
-	var logWriter io.Writer = os.Stdout
-	if appConfig.SystemLog != "" {
-		f, err := os.OpenFile(appConfig.SystemLog, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-		if err == nil {
-			logWriter = io.MultiWriter(os.Stdout, f)
-		}
-	}
-	log.SetOutput(logWriter)
-}
-
-// logDebug prints detailed traces if debug mode is active
-func logDebug(format string, v ...interface{}) {
-	if appConfig.Debug {
-		log.Printf("[DEBUG] "+format, v...)
-	}
+	// Configures the shared logger to write to the specified file
+	// and toggle terminal output based on the debug flag.
+	logger.Setup(appConfig.LogFile, appConfig.Debug)
 }

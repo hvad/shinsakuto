@@ -3,10 +3,11 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"log" 
 	"net/http"
-	"shinsakuto/pkg/models"
 	"time"
+
+	"shinsakuto/pkg/models"
+	"shinsakuto/pkg/logger"
 )
 
 // startWorkers initializes the pool of background database writers
@@ -22,19 +23,21 @@ func dbWorker(dataChan <-chan models.CheckResult, id int) {
 	ticker := time.NewTicker(time.Duration(appConfig.FlushIntervalMS) * time.Millisecond)
 	defer ticker.Stop()
 
-	logDebug("DB Worker %d started", id)
+	logger.Info("DB Worker %d initialized and waiting for data", id)
 
 	for {
 		select {
 		case res := <-dataChan:
 			batch = append(batch, res)
+			// Flush if batch size is reached
 			if len(batch) >= appConfig.BatchSize {
 				flushToTSDB(batch)
 				batch = batch[:0]
 			}
 		case <-ticker.C:
+			// Periodic flush to avoid data being stuck in the buffer
 			if len(batch) > 0 {
-				logDebug("Worker %d: Interval flush triggering", id)
+				logger.Info("Worker %d: Interval flush triggered (batch size: %d)", id, len(batch))
 				flushToTSDB(batch)
 				batch = batch[:0]
 			}
@@ -48,7 +51,7 @@ func flushToTSDB(results []models.CheckResult) {
 	now := time.Now().UnixNano()
 
 	for _, res := range results {
-		// Influx Line Protocol format: measurement,tag=val field=val timestamp
+		// Format: measurement,tag=val field=val timestamp (Influx Line Protocol)
 		line := fmt.Sprintf("shinsakuto_check,id=%s status=%di,output=\"%s\" %d\n",
 			res.ID, res.Status, res.Output, now)
 		buffer.WriteString(line)
@@ -56,10 +59,11 @@ func flushToTSDB(results []models.CheckResult) {
 
 	req, err := http.NewRequest("POST", appConfig.TSDBUrl, &buffer)
 	if err != nil {
-		log.Printf("[ERROR] Failed to create TSDB request: %v", err)
+		logger.Info("[ERROR] Failed to create TSDB request: %v", err)
 		return
 	}
 
+	// Add authentication header if token is provided
 	if appConfig.TSDBToken != "" {
 		req.Header.Set("Authorization", "Token "+appConfig.TSDBToken)
 	}
@@ -67,12 +71,12 @@ func flushToTSDB(results []models.CheckResult) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("[ERROR] TSDB network error: %v", err)
+		logger.Info("[ERROR] TSDB network error: %v", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
-		log.Printf("[ERROR] TSDB returned status: %d", resp.StatusCode)
+		logger.Info("[ERROR] TSDB returned unexpected status: %d", resp.StatusCode)
 	}
 }

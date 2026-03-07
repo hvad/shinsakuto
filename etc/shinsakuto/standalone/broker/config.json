@@ -1,7 +1,10 @@
 {
   "api_port": 8084,
-  "tsdb_url": "http://localhost:8428/write",
-  "batch_size": 500,
+  "tsdb_url": "http://127.0.0.1:8428/write",
+  "tsdb_token": "",
+  "batch_size": 100,
   "flush_interval_ms": 1000,
-  "worker_count": 4
+  "worker_count": 4,
+  "log_file": "var/log/broker.log",
+  "debug": true
 }
