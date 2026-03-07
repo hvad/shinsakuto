@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -32,10 +31,10 @@ func startAPI() {
 	mux.HandleFunc("/v1/cluster/join", handleJoin)
 
 	addr := fmt.Sprintf("%s:%d", appConfig.APIAddress, appConfig.APIPort)
-	log.Printf("[API] Arbiter API server listening on %s", addr)
+	logArbiter("[API] Arbiter API server listening on %s", addr)
 
 	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatalf("[FATAL] Arbiter API server failed: %v", err)
+		logFatal("[FATAL] Arbiter API server failed: %v", err)
 	}
 }
 
@@ -63,7 +62,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	configMutex.RLock()
 	defer configMutex.RUnlock()
 
-	role := "Solo"
+	role := "Standalone"
 	if appConfig.HAEnabled && raftNode != nil {
 		role = raftNode.State().String()
 	}
@@ -85,7 +84,8 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 func handleDowntime(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		if !isLeader() {
-			http.Error(w, "[WARNING] Forbidden: This arbiter node is not the Raft Leader", http.StatusForbidden)
+			logArbiter("[WARNING] Forbidden: Downtime request rejected, not the Raft Leader")
+			http.Error(w, "Forbidden: Not Raft Leader", http.StatusForbidden)
 			return
 		}
 
@@ -106,6 +106,7 @@ func handleDowntime(w http.ResponseWriter, r *http.Request) {
 			configMutex.Unlock()
 		}
 
+		logArbiter("[API] New downtime registered: %s", d.ID)
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(d)
 		go refreshConfig()
@@ -121,10 +122,12 @@ func handleDowntime(w http.ResponseWriter, r *http.Request) {
 // handleClusterSync receives a TGZ archive from the Leader and extracts it locally.
 func handleClusterSync(w http.ResponseWriter, r *http.Request) {
 	if isLeader() || !appConfig.HAEnabled {
+		logArbiter("[HA] Cluster sync rejected: node is leader or HA disabled")
 		http.Error(w, "[WARNING] Rejected", http.StatusForbidden)
 		return
 	}
 
+	logArbiter("[HA] Receiving cluster configuration sync...")
 	gzr, err := gzip.NewReader(r.Body)
 	if err != nil {
 		http.Error(w, "[WARNING] Invalid GZIP", http.StatusBadRequest)
@@ -152,6 +155,7 @@ func handleClusterSync(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(http.StatusOK)
+	logArbiter("[HA] Cluster configuration sync completed")
 	go refreshConfig()
 }
 
@@ -172,8 +176,10 @@ func handleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logArbiter("[HA] Node %s (addr: %s) joining Raft cluster", req.NodeID, req.Address)
 	future := raftNode.AddVoter(raft.ServerID(req.NodeID), raft.ServerAddress(req.Address), 0, 0)
 	if err := future.Error(); err != nil {
+		logArbiter("[ERROR] Failed to add voter %s: %v", req.NodeID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

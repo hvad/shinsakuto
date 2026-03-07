@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -54,7 +53,7 @@ func setupRaft() error {
 	// This prevents the Bootstrap node from losing its term history on every restart.
 	dbPath := filepath.Join(appConfig.RaftDataDir, "raft-log.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) && appConfig.BootstrapCluster {
-		log.Printf("[HA] Initial bootstrap detected, preparing clean storage in %s", appConfig.RaftDataDir)
+		logArbiter("[HA] Initial bootstrap detected, preparing clean storage in %s", appConfig.RaftDataDir)
 	}
 
 	snapshots, _ := raft.NewFileSnapshotStore(appConfig.RaftDataDir, 2, os.Stderr)
@@ -71,7 +70,7 @@ func setupRaft() error {
 	hasState, _ := raft.HasExistingState(logStore, stableStore, snapshots)
 
 	if appConfig.BootstrapCluster && !hasState {
-		log.Printf("[HA] No existing state found. Bootstrapping as Leader: %s", raftConfig.LocalID)
+		logArbiter("[HA] No existing state found. Bootstrapping as Leader: %s", raftConfig.LocalID)
 		configuration := raft.Configuration{
 			Servers: []raft.Server{
 				{
@@ -82,7 +81,7 @@ func setupRaft() error {
 		}
 		raftNode.BootstrapCluster(configuration)
 	} else if !appConfig.BootstrapCluster {
-		log.Printf("[HA] Node %s starting as Follower, waiting to join...", raftConfig.LocalID)
+		logArbiter("[HA] Node %s starting as Follower, waiting to join...", raftConfig.LocalID)
 		go joinCluster()
 	}
 
@@ -102,11 +101,11 @@ func joinCluster() {
 
 		resp, err := http.Post(url, "application/json", bytes.NewBuffer(payload))
 		if err == nil && resp.StatusCode == http.StatusOK {
-			log.Printf("[HA] Successfully joined cluster via %s", nodeAddr)
+			logArbiter("[HA] Successfully joined cluster via %s", nodeAddr)
 			return
 		}
 		if err != nil {
-			log.Printf("[HA] Join attempt failed for %s: %v", nodeAddr, err)
+			logArbiter("[HA] Join attempt failed for %s: %v", nodeAddr, err)
 		}
 	}
 }
@@ -129,7 +128,7 @@ func (f *arbiterFSM) Apply(l *raft.Log) interface{} {
 		configMutex.Lock()
 		downtimes = append(downtimes, d)
 		configMutex.Unlock()
-		log.Printf("[FSM] Replicated downtime applied: %s", d.ID)
+		logArbiter("[FSM] Replicated downtime applied: %s", d.ID)
 	}
 	return nil
 }

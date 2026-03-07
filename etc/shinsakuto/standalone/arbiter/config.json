@@ -1,10 +1,10 @@
 {
-  "scheduler_urls": ["http://127.0.0.1:8091"],
+  "scheduler_urls": ["http://127.0.0.1:8090"],
   "scheduler_cool_off_minutes": 5,
   "definitions_dir": "etc/shinsakuto/conf.d/standalone",
-  "api_address": "0.0.0.0",
+  "api_address": "127.0.0.1",
   "api_port": 8080,
-  "debug": false,
+  "debug": true,
   "log_file": "var/log/arbiter.log",
   "hot_reload": true,
   "hot_reload_debounce": 5,

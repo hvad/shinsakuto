@@ -64,7 +64,7 @@ func main() {
 	if *daemon {
 		cmd := exec.Command(os.Args[0], "-config", *cfgPath)
 		if err := cmd.Start(); err != nil {
-			log.Fatalf("[ERROR] Arbiter failed to start daemon: %v", err)
+			logFatal("[ERROR] Arbiter failed to start daemon: %v", err)
 		}
 		fmt.Printf("[START] Arbiter started in background (PID: %d)\n", cmd.Process.Pid)
 		os.Exit(0)
@@ -72,12 +72,12 @@ func main() {
 
 	// 5. HA Initialization
 	if appConfig.HAEnabled {
-		log.Printf("[HA] Initializing Raft node: %s", appConfig.RaftNodeID)
+		logArbiter("[HA] Initializing Raft node: %s", appConfig.RaftNodeID)
 		if err := setupRaft(); err != nil {
-			log.Fatalf("[FATAL] Raft error: %v", err)
+			logFatal("[FATAL] Raft error: %v", err)
 		}
 	} else {
-		log.Println("[INFO] Arbiter Standalone mode")
+		logArbiter("[INFO] Arbiter Standalone mode")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -86,8 +86,8 @@ func main() {
 	go startWatcher(ctx)
 	go startAPI()
 
-	log.Printf("[START] Arbiter start on port %d", appConfig.APIPort)
+	logArbiter("[START] Arbiter start on port %d", appConfig.APIPort)
 	
 	<-ctx.Done()
-	log.Println("[STOP] Shutting down Arbiter...")
+	logArbiter("[STOP] Shutting down Arbiter...")
 }

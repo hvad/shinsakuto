@@ -39,7 +39,7 @@ func startWatcher(ctx context.Context) {
 			select {
 			case <-ticker.C:
 				if isLeader() {
-					log.Println("[WATCHER] Periodic sharding sync triggered by leader")
+					logArbiter("[WATCHER] Periodic sharding sync triggered by leader")
 					refreshConfig()
 				}
 			case <-ctx.Done():
@@ -59,7 +59,7 @@ func refreshConfig() {
 	if isInCoolOff {
 		coolOffDuration := time.Duration(appConfig.SchedulerCoolOffMinutes) * time.Minute
 		if time.Since(coolOffStartTime) < coolOffDuration {
-			log.Printf("[WATCHER] Sync skipped: system is in cool-off until %v", coolOffStartTime.Add(coolOffDuration).Format("15:04:05"))
+			logArbiter("[WATCHER] Sync skipped: system is in cool-off until %v", coolOffStartTime.Add(coolOffDuration).Format("15:04:05"))
 			return
 		}
 		isInCoolOff = false 
@@ -84,7 +84,7 @@ func refreshConfig() {
 	// Validate configuration integrity
 	audit := RunLinter(cfg)
 	if len(audit.Errors) > 0 {
-		log.Printf("[LINTER] Rejected: %d errors found", len(audit.Errors))
+		logArbiter("[LINTER] Rejected: %d errors found", len(audit.Errors))
 		syncSuccess = false
 		return
 	}
@@ -143,7 +143,7 @@ func syncShardsToSchedulers(shards []models.GlobalConfig) {
 	totalSchedulers := len(appConfig.SchedulerURLs)
 
 	if totalSchedulers == 0 {
-		log.Println("[WARNING] No Scheduler URLs configured")
+		logArbiter("[WARNING] No Scheduler URLs configured")
 		return
 	}
 
@@ -155,20 +155,20 @@ func syncShardsToSchedulers(shards []models.GlobalConfig) {
 		
 		// Retry logic: 3 attempts per scheduler
 		for attempt := 1; attempt <= 3; attempt++ {
-			log.Printf("[WATCHER] Sending shard %d to %s (Attempt %d/3)", i, url, attempt)
+			logArbiter("[WATCHER] Sending shard %d to %s (Attempt %d/3)", i, url, attempt)
 			
 			resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(data))
 			if err == nil && resp.StatusCode == http.StatusOK {
 				resp.Body.Close()
-				log.Printf("[WATCHER] Successfully synchronized shard %d with %s", i, url)
+				logArbiter("[WATCHER] Successfully synchronized shard %d with %s", i, url)
 				successCount++
 				break 
 			}
 
 			if err != nil {
-				log.Printf("[WATCHER] Attempt %d failed for %s: %v", attempt, url, err)
+				logArbiter("[WATCHER] Attempt %d failed for %s: %v", attempt, url, err)
 			} else {
-				log.Printf("[WATCHER] Attempt %d failed for %s: Status %d", attempt, url, resp.StatusCode)
+				logArbiter("[WATCHER] Attempt %d failed for %s: Status %d", attempt, url, resp.StatusCode)
 				resp.Body.Close()
 			}
 
@@ -180,7 +180,7 @@ func syncShardsToSchedulers(shards []models.GlobalConfig) {
 
 	// Handle critical failure if no schedulers were reached
 	if successCount == 0 {
-		log.Printf("[WARNING] Failed to reach any Scheduler. Entering cool-off for %d minutes", appConfig.SchedulerCoolOffMinutes)
+		logArbiter("[CRITICAL] Failed to reach any Scheduler. Entering cool-off for %d minutes", appConfig.SchedulerCoolOffMinutes)
 		isInCoolOff = true
 		coolOffStartTime = time.Now()
 		syncSuccess = false
@@ -321,7 +321,7 @@ func broadcastToFollowers() {
 			resp, err := httpClient.Post(url, "application/x-gzip", bytes.NewReader(payload))
 			if err == nil {
 				resp.Body.Close()
-				log.Printf("[HA] Propagated config to follower: %s", target)
+				logArbiter("[HA] Propagated config to follower: %s", target)
 			}
 		}(addr)
 	}
@@ -336,7 +336,7 @@ func startHotReloadLoop(ctx context.Context) {
 		select {
 		case ev := <-w.Events:
 			if (ev.Op&fsnotify.Write == fsnotify.Write || ev.Op&fsnotify.Create == fsnotify.Create) && isLeader() {
-				log.Printf("[HOTRELOAD] Change detected in %s, re-syncing shards", ev.Name)
+				logArbiter("[HOTRELOAD] Change detected in %s, re-syncing shards", ev.Name)
 				refreshConfig()
 			}
 		case <-ctx.Done():

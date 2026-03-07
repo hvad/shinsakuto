@@ -30,6 +30,7 @@ type LinterResult struct {
 // It verifies the integrity of relationships between objects (e.g., Service -> Host)
 // and updates the internal counters for the Arbiter.
 func RunLinter(cfg *models.GlobalConfig) LinterResult {
+	logArbiter("[LINTER] Starting configuration audit.")
 	res := LinterResult{
 		Counts: ObjectCounts{
 			Commands:      len(cfg.Commands),
@@ -94,5 +95,6 @@ func RunLinter(cfg *models.GlobalConfig) LinterResult {
 		}
 	}
 
+	logArbiter("[LINTER] Audit complete: %d errors, %d warnings", len(res.Errors), len(res.Warnings))
 	return res
 }
