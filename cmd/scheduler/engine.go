@@ -30,13 +30,14 @@ func handleHostResult(res models.CheckResult) {
 		logStateChange("HOST", h.ID, state, res.Output)
 		if !h.InDowntime {
 			notifyReactionner(h.ID, state, res.Status, res.Output)
-		} else {
-			logDebug("Host %s alert suppressed: Active Downtime", h.ID)
 		}
 	}
+
+	// Forward result to broker for storage if enabled
+	forwardToBroker(res)
 }
 
-// handleServiceResult processes service check results
+// handleServiceResult processes service check results and state changes
 func handleServiceResult(res models.CheckResult) {
 	s, ok := services[res.ID]
 	if !ok {
@@ -48,12 +49,44 @@ func handleServiceResult(res models.CheckResult) {
 
 	if oldState != s.CurrentState {
 		logStateChange("SERVICE", s.ID, "CHANGE", res.Output)
-		// Only alert if the service and its host are not in downtime
 		host, hostExists := hosts[s.HostName]
 		if !s.InDowntime && (!hostExists || !host.InDowntime) {
 			notifyReactionner(s.ID, "ALERT", res.Status, res.Output)
 		}
 	}
+
+	// Forward result to broker for storage if enabled
+	forwardToBroker(res)
+}
+
+// forwardToBroker sends check results to the first available Broker (Client-side Failover)
+func forwardToBroker(res models.CheckResult) {
+	if !appConfig.BrokerEnabled || len(appConfig.BrokerURLs) == 0 {
+		return
+	}
+
+	brokerWG.Add(1) // Track this async task for graceful shutdown
+	go func() {
+		defer brokerWG.Done()
+		payload, _ := json.Marshal(res)
+
+		// Try each configured broker URL until one succeeds
+		for _, baseURL := range appConfig.BrokerURLs {
+			url := strings.TrimSuffix(baseURL, "/") + "/v1/broker/data"
+			
+			resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(payload))
+			if err == nil {
+				defer resp.Body.Close()
+				if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+					return // Success, data delivered
+				}
+				logDebug("[BROKER] %s returned status %d", url, resp.StatusCode)
+			} else {
+				logDebug("[BROKER] Failed to reach %s: %v", url, err)
+			}
+		}
+		logDebug("[ERROR] All brokers failed to receive result for %s", res.ID)
+	}()
 }
 
 // notifyReactionner sends alert payloads asynchronously to the Reactionner
@@ -71,22 +104,5 @@ func notifyReactionner(id, t string, state int, out string) {
 		if err == nil {
 			resp.Body.Close()
 		}
-	}()
-}
-
-// forwardToBroker send result to broker asynchronously
-func forwardToBroker(res models.CheckResult) {
-	if !appConfig.BrokerEnabled || appConfig.BrokerURL == "" {
-		return
-	}
-
-	go func() {
-		payload, _ := json.Marshal(res)
-		resp, err := httpClient.Post(appConfig.BrokerURL+"/v1/broker/data", "application/json", bytes.NewBuffer(payload))
-		if err != nil {
-			logDebug("[BROKER] Erreur d'envoi: %v", err)
-			return
-		}
-		resp.Body.Close()
 	}()
 }

@@ -85,13 +85,13 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 func handleDowntime(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		if !isLeader() {
-			http.Error(w, "Forbidden: This arbiter node is not the Raft Leader", http.StatusForbidden)
+			http.Error(w, "[WARNING] Forbidden: This arbiter node is not the Raft Leader", http.StatusForbidden)
 			return
 		}
 
 		var d models.Downtime
 		if err := json.NewDecoder(r.Body).Decode(&d); err != nil {
-			http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+			http.Error(w, "[WARNING] Invalid JSON payload", http.StatusBadRequest)
 			return
 		}
 
@@ -121,13 +121,13 @@ func handleDowntime(w http.ResponseWriter, r *http.Request) {
 // handleClusterSync receives a TGZ archive from the Leader and extracts it locally.
 func handleClusterSync(w http.ResponseWriter, r *http.Request) {
 	if isLeader() || !appConfig.HAEnabled {
-		http.Error(w, "Rejected", http.StatusForbidden)
+		http.Error(w, "[WARNING] Rejected", http.StatusForbidden)
 		return
 	}
 
 	gzr, err := gzip.NewReader(r.Body)
 	if err != nil {
-		http.Error(w, "Invalid GZIP", http.StatusBadRequest)
+		http.Error(w, "[WARNING] Invalid GZIP", http.StatusBadRequest)
 		return
 	}
 	defer gzr.Close()

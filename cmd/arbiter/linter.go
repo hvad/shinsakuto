@@ -55,19 +55,19 @@ func RunLinter(cfg *models.GlobalConfig) LinterResult {
 
 		// Critical: ID must not be empty for an active host
 		if h.ID == "" {
-			res.Errors = append(res.Errors, "Host definition found with an empty ID")
+			res.Errors = append(res.Errors, "[ERROR] Host definition found with an empty ID")
 			continue
 		}
 
 		// Critical: Check for duplicate host IDs within the configuration
 		if hostMap[h.ID] {
-			res.Errors = append(res.Errors, fmt.Sprintf("Duplicate host ID detected: %s", h.ID))
+			res.Errors = append(res.Errors, fmt.Sprintf("[ERROR] Duplicate host ID detected: %s", h.ID))
 		}
 		hostMap[h.ID] = true
 
 		// Warning: Basic network address validation (IPv4, IPv6, or 'localhost')
 		if h.Address != "" && h.Address != "localhost" && net.ParseIP(h.Address) == nil {
-			res.Warnings = append(res.Warnings, fmt.Sprintf("Host %s uses a non-standard address format: %s", h.ID, h.Address))
+			res.Warnings = append(res.Warnings, fmt.Sprintf("[ERROR] Host %s uses a non-standard address format: %s", h.ID, h.Address))
 		}
 	}
 
@@ -82,15 +82,15 @@ func RunLinter(cfg *models.GlobalConfig) LinterResult {
 
 		// Critical: Service must have an ID
 		if s.ID == "" {
-			res.Errors = append(res.Errors, fmt.Sprintf("Service attached to host %s is missing its ID", s.HostName))
+			res.Errors = append(res.Errors, fmt.Sprintf("[ERROR] Service attached to host %s is missing its ID", s.HostName))
 		}
 
 		// Critical: Verify Host relationship
 		if s.HostName == "" {
-			res.Errors = append(res.Errors, fmt.Sprintf("Service %s is orphaned (no host_name assigned)", s.ID))
+			res.Errors = append(res.Errors, fmt.Sprintf("[ERROR] Service %s is orphaned (no host_name assigned)", s.ID))
 		} else if !hostMap[s.HostName] {
 			// A service must point to a host that exists and is NOT a template
-			res.Errors = append(res.Errors, fmt.Sprintf("Service %s references an unknown or unregistered host: %s", s.ID, s.HostName))
+			res.Errors = append(res.Errors, fmt.Sprintf("[ERROR] Service %s references an unknown or unregistered host: %s", s.ID, s.HostName))
 		}
 	}
 

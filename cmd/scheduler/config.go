@@ -9,15 +9,15 @@ import (
 
 // SchedConfig defines the runtime parameters for the Scheduler
 type SchedConfig struct {
-	APIAddress     string `json:"api_address"`
-	APIPort        int    `json:"api_port"`
-	ReactionnerURL string `json:"reactionner_url"`
-	BrokerEnabled  bool   `json:"broker_enabled"`
-	BrokerURL      string `json:"broker_url"`
-	StateFile      string `json:"state_file"`
-	SystemLog      string `json:"system_log"`
-	HistoryLog     string `json:"history_log"`
-	Debug          bool   `json:"debug"`
+	APIAddress     string   `json:"api_address"`
+	APIPort        int      `json:"api_port"`
+	ReactionnerURL string   `json:"reactionner_url"`
+	BrokerEnabled  bool     `json:"broker_enabled"` 
+	BrokerURLs     []string `json:"broker_urls"`    
+	StateFile      string   `json:"state_file"`
+	SystemLog      string   `json:"system_log"`
+	HistoryLog     string   `json:"history_log"`
+	Debug          bool     `json:"debug"`
 }
 
 // loadConfig reads and parses the JSON configuration file
@@ -26,10 +26,11 @@ func loadConfig(path string) error {
 	if err != nil {
 		return err
 	}
+	// BrokerEnabled will be false if not specified in JSON
 	return json.Unmarshal(data, &appConfig)
 }
 
-// logDebug prints detailed traces to the system log
+// logDebug prints detailed traces to the system log if debug mode is on
 func logDebug(format string, v ...interface{}) {
 	if appConfig.Debug {
 		msg := fmt.Sprintf("[DEBUG] "+format, v...)
@@ -39,7 +40,6 @@ func logDebug(format string, v ...interface{}) {
 
 // initLoggers initializes the system and history log files
 func initLoggers() {
-	// Initialize system logging output
 	if appConfig.SystemLog != "" {
 		f, err := os.OpenFile(appConfig.SystemLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err == nil {
@@ -48,8 +48,6 @@ func initLoggers() {
 			fmt.Printf("Warning: Could not open system log file: %v\n", err)
 		}
 	}
-
-	// Initialize history logging for state changes
 	if appConfig.HistoryLog != "" {
 		f, err := os.OpenFile(appConfig.HistoryLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err == nil {

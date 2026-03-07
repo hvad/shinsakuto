@@ -1,8 +1,8 @@
 {
   "api_port": 8070,
   "debug": true,
-  "system_log": "var/log/reactionner/system_reactionner.log",
-  "alerts_log": "var/log/reactionner/alerts_history.log",
+  "system_log": "var/log/reactionner.log",
+  "alerts_log": "var/log/alerts.log",
   "smtp": {
     "enabled": false,
     "host": "smtp.example.com",
@@ -15,7 +15,7 @@
   "ha_enabled": false,
   "raft_node_id": "reactionner-01",
   "raft_bind_addr": "127.0.0.1:10003",
-  "raft_data_dir": "data/reactionner-01",
+  "raft_data_dir": "var/lib/reactionner-01",
   "bootstrap_cluster": true,
   "cluster_nodes": [
     "127.0.0.1:8083"

@@ -7,5 +7,5 @@
   "max_concurrent": 10,
   "debug": true,
   "log_results": true,
-  "log_file": "var/log/poller/poller.log"
+  "log_file": "var/log/poller.log"
 }

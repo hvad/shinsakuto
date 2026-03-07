@@ -12,8 +12,8 @@ import (
 )
 
 func main() {
-	cfgPath := flag.String("config", "config.json", "Path to JSON configuration file")
-	daemon := flag.Bool("d", false, "Run Arbiter in background (daemon mode)")
+	cfgPath := flag.String("c", "config.json", "Path to JSON configuration file")
+	daemon := flag.Bool("d", false, "Run Arbiter in background")
 	verifyOnly := flag.Bool("v", false, "Verify YAML definitions and exit")
 	flag.Parse()
 
@@ -23,7 +23,7 @@ func main() {
 
 	// 3. Verification Mode (-v)
 	if *verifyOnly {
-		fmt.Printf("Analyzing definitions in: %s\n", appConfig.DefinitionsDir)
+		fmt.Printf("[INFO] Analyzing definitions in: %s\n", appConfig.DefinitionsDir)
 		cfg, err := loadAndProcess()
 		if err != nil {
 			fmt.Printf("[ERROR] YAML Processing failed: %v\n", err)
@@ -52,11 +52,11 @@ func main() {
 			for _, e := range audit.Errors {
 				fmt.Printf("[ERROR] %s\n", e)
 			}
-			fmt.Println("\nResult: Invalid Configuration")
+			fmt.Println("\n[INFO] Result: Invalid Configuration")
 			os.Exit(1)
 		}
 
-		fmt.Println("\nResult: Configuration Valid")
+		fmt.Println("\n[INFO] Result: Configuration Valid")
 		os.Exit(0)
 	}
 
@@ -66,7 +66,7 @@ func main() {
 		if err := cmd.Start(); err != nil {
 			log.Fatalf("[ERROR] Arbiter failed to start daemon: %v", err)
 		}
-		fmt.Printf("Arbiter started in background (PID: %d)\n", cmd.Process.Pid)
+		fmt.Printf("[START] Arbiter started in background (PID: %d)\n", cmd.Process.Pid)
 		os.Exit(0)
 	}
 
@@ -77,7 +77,7 @@ func main() {
 			log.Fatalf("[FATAL] Raft error: %v", err)
 		}
 	} else {
-		log.Println("[INFO] Arbiter solo mode")
+		log.Println("[INFO] Arbiter Standalone mode")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -86,7 +86,7 @@ func main() {
 	go startWatcher(ctx)
 	go startAPI()
 
-	log.Printf("[START] Arbiter operational on port %d", appConfig.APIPort)
+	log.Printf("[START] Arbiter start on port %d", appConfig.APIPort)
 	
 	<-ctx.Done()
 	log.Println("[STOP] Shutting down Arbiter...")

@@ -143,7 +143,7 @@ func syncShardsToSchedulers(shards []models.GlobalConfig) {
 	totalSchedulers := len(appConfig.SchedulerURLs)
 
 	if totalSchedulers == 0 {
-		log.Println("[WATCHER] WARNING: No Scheduler URLs configured")
+		log.Println("[WARNING] No Scheduler URLs configured")
 		return
 	}
 
@@ -166,7 +166,7 @@ func syncShardsToSchedulers(shards []models.GlobalConfig) {
 			}
 
 			if err != nil {
-				log.Printf("[WATCHer] Attempt %d failed for %s: %v", attempt, url, err)
+				log.Printf("[WATCHER] Attempt %d failed for %s: %v", attempt, url, err)
 			} else {
 				log.Printf("[WATCHER] Attempt %d failed for %s: Status %d", attempt, url, resp.StatusCode)
 				resp.Body.Close()
@@ -180,7 +180,7 @@ func syncShardsToSchedulers(shards []models.GlobalConfig) {
 
 	// Handle critical failure if no schedulers were reached
 	if successCount == 0 {
-		log.Printf("[WATCHER] FATAL: Failed to reach any Scheduler. Entering cool-off for %d minutes", appConfig.SchedulerCoolOffMinutes)
+		log.Printf("[WARNING] Failed to reach any Scheduler. Entering cool-off for %d minutes", appConfig.SchedulerCoolOffMinutes)
 		isInCoolOff = true
 		coolOffStartTime = time.Now()
 		syncSuccess = false

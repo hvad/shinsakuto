@@ -38,16 +38,16 @@ func setupRaft() error {
 
 	addr, err := net.ResolveTCPAddr("tcp", appConfig.RaftBindAddr)
 	if err != nil {
-		return fmt.Errorf("failed to resolve raft bind address: %v", err)
+		return fmt.Errorf("[CRITICAL] Failed to resolve raft bind address: %v", err)
 	}
 
 	transport, err := raft.NewTCPTransport(appConfig.RaftBindAddr, addr, 3, 10*time.Second, os.Stderr)
 	if err != nil {
-		return fmt.Errorf("failed to create raft transport: %v", err)
+		return fmt.Errorf("[CRITICAL] Failed to create raft transport: %v", err)
 	}
 
 	if err := os.MkdirAll(appConfig.RaftDataDir, 0755); err != nil {
-		return fmt.Errorf("failed to create raft data directory: %v", err)
+		return fmt.Errorf("[CRITICAL] Failed to create raft data directory: %v", err)
 	}
 
 	// Logic fix: Only cleanup if the log database doesn't exist yet.
@@ -63,7 +63,7 @@ func setupRaft() error {
 
 	r, err := raft.NewRaft(raftConfig, &arbiterFSM{}, logStore, stableStore, snapshots, transport)
 	if err != nil {
-		return fmt.Errorf("failed to start raft: %v", err)
+		return fmt.Errorf("[CRITICAL] Failed to start raft: %v", err)
 	}
 	raftNode = r
 
