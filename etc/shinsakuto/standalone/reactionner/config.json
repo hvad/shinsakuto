@@ -1,7 +1,7 @@
 {
   "api_port": 8070,
   "debug": true,
-  "system_log": "var/log/reactionner.log",
+  "log_file": "var/log/reactionner.log",
   "alerts_log": "var/log/alerts.log",
   "smtp": {
     "enabled": false,

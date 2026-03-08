@@ -3,7 +3,7 @@
     "http://127.0.0.1:8091"
   ],
   "poller_id": "poller-01",
-  "interval_ms": 500,
+  "interval_ms": 2000,
   "max_concurrent": 10,
   "debug": true,
   "log_results": true,

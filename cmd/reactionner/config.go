@@ -4,13 +4,15 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+
+	"shinsakuto/pkg/logger"
 )
 
 // Config holds the Reactionner runtime parameters
 type Config struct {
 	APIPort   int        `json:"api_port"`
 	Debug     bool       `json:"debug"`
-	SystemLog string     `json:"system_log"`
+	LogFile   string     `json:"log_file"`    
 	AlertsLog string     `json:"alerts_log"`
 	SMTP      SMTPConfig `json:"smtp"`
 	
@@ -35,7 +37,6 @@ type SMTPConfig struct {
 
 var (
 	appConfig       Config
-	systemLogger    *log.Logger
 	alertLogger     *log.Logger
 	maintenances    = make(map[string]int64) 
 	acknowledgments = make(map[string]bool)
@@ -48,28 +49,16 @@ func loadConfig(path string) error {
 	return json.Unmarshal(data, &appConfig)
 }
 
-// initLoggers initializes system and alert log files
+// initLoggers initializes the centralized system logger and dedicated alert history file
 func initLoggers() {
-	// Technical system logger
-	if appConfig.SystemLog != "" {
-		f, _ := os.OpenFile(appConfig.SystemLog, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
-		systemLogger = log.New(f, "SYS: ", log.LstdFlags)
-	} else {
-		systemLogger = log.New(os.Stdout, "SYS: ", log.LstdFlags)
-	}
+	// Initialize the shared technical logger
+	logger.Setup(appConfig.LogFile, appConfig.Debug)
 
-	// Dedicated alert history logger
+	// Dedicated alert history logger (kept separate for auditing)
 	if appConfig.AlertsLog != "" {
 		f, _ := os.OpenFile(appConfig.AlertsLog, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 		alertLogger = log.New(f, "ALERT: ", log.LstdFlags)
 	} else {
 		alertLogger = log.New(os.Stdout, "ALERT: ", log.LstdFlags)
-	}
-}
-
-// logDebug provides verbose technical traces if Debug is enabled
-func logDebug(msg string, args ...interface{}) {
-	if appConfig.Debug {
-		systemLogger.Printf("[DEBUG] "+msg, args...)
 	}
 }
