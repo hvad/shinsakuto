@@ -12,11 +12,10 @@ import (
 	"shinsakuto/pkg/logger"
 )
 
+// handleHostResult updates host state and triggers notifications on change
 func handleHostResult(res models.CheckResult) {
 	hID := strings.TrimPrefix(res.ID, "HOST:")
-	mu.Lock()
 	h, ok := hosts[hID]
-	mu.Unlock()
 	if !ok { return }
 
 	wasUp := h.IsUp
@@ -34,10 +33,9 @@ func handleHostResult(res models.CheckResult) {
 	forwardToBroker(res)
 }
 
+// handleServiceResult updates service state and alerts if necessary
 func handleServiceResult(res models.CheckResult) {
-	mu.Lock()
 	s, ok := services[res.ID] 
-	mu.Unlock()
 	if !ok { return }
 
 	oldState := s.CurrentState
@@ -45,9 +43,7 @@ func handleServiceResult(res models.CheckResult) {
 
 	if oldState != s.CurrentState {
 		logStateChange("SERVICE", s.ID, "CHANGE", res.Output)
-		mu.RLock()
 		host, hostExists := hosts[s.HostName]
-		mu.RUnlock()
 		if !s.InDowntime && (!hostExists || !host.InDowntime) {
 			notifyReactionner(s.ID, "ALERT", res.Status, res.Output)
 		}
@@ -55,6 +51,7 @@ func handleServiceResult(res models.CheckResult) {
 	forwardToBroker(res)
 }
 
+// forwardToBroker sends data to external storage brokers
 func forwardToBroker(res models.CheckResult) {
 	if !appConfig.BrokerEnabled || len(appConfig.BrokerURLs) == 0 {
 		return
@@ -64,24 +61,18 @@ func forwardToBroker(res models.CheckResult) {
 	go func() {
 		defer brokerWG.Done()
 		payload, _ := json.Marshal(res)
-
 		for _, baseURL := range appConfig.BrokerURLs {
 			url := strings.TrimSuffix(baseURL, "/") + "/v1/broker/data"
 			resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(payload))
 			if err == nil {
 				resp.Body.Close()
-				if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-					return
-				}
-				logger.Info("[BROKER] %s returned status %d", url, resp.StatusCode)
-			} else {
-				logger.Info("[BROKER] Failed to reach %s: %v", url, err)
+				return
 			}
 		}
-		logger.Info("[ERROR] All brokers failed to receive result for %s", res.ID)
 	}()
 }
 
+// notifyReactionner triggers the notification engine
 func notifyReactionner(id, t string, state int, out string) {
 	logger.Info("Triggering notification for %s", id)
 	payload, _ := json.Marshal(models.NotificationRequest{
@@ -95,8 +86,6 @@ func notifyReactionner(id, t string, state int, out string) {
 		resp, err := httpClient.Do(req)
 		if err == nil {
 			resp.Body.Close()
-		} else {
-			logger.Info("[ERROR] Failed to reach Reactionner: %v", err)
 		}
 	}()
 }

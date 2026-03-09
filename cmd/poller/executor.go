@@ -11,16 +11,16 @@ import (
 	"shinsakuto/pkg/models"
 )
 
-// executeTask handles command execution and captures Nagios-style exit codes
+// executeTask runs the provided command and captures Nagios-style exit codes
 func executeTask(task models.CheckTask) models.CheckResult {
-	// Debug trace for task initiation
-	logger.Info("[EXECUTOR] Initiating execution for task: %s", task.ID)
+	// Debug trace for start of execution
+	logger.Info("[EXECUTOR] Running task ID: %s | Command: %s", task.ID, task.Command)
 
-	// Set a hard timeout of 30s for the check to prevent orphaned/hanging processes
+	// Set a 30s context timeout to ensure no hanging processes or orphans
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Execute via /bin/sh to support pipes and redirects in the command string
+	// Execute through /bin/sh to support shell features in the command string
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", task.Command)
 	output, err := cmd.CombinedOutput()
 
@@ -31,20 +31,22 @@ func executeTask(task models.CheckTask) models.CheckResult {
 
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
-			// Extract standard exit code (0: OK, 1: WARNING, 2: CRITICAL, 3: UNKNOWN)
+			// Extract standard Nagios exit codes: 
+			// 0: OK, 1: WARNING, 2: CRITICAL, 3: UNKNOWN
 			result.Status = exitError.Sys().(syscall.WaitStatus).ExitStatus()
 		} else {
-			// Handle non-exit errors (e.g., binary not found) as UNKNOWN
-			result.Status = 3
+			// If execution itself failed (e.g. context timeout or binary not found)
+			result.Status = 3 // UNKNOWN
 			result.Output = err.Error()
 		}
 	} else {
-		// Command executed successfully with exit code 0
-		result.Status = 0
+		// Command finished successfully with exit code 0
+		result.Status = 0 // OK
 	}
 
-	// Trace the final result status and output
-	logger.Info("[RESULT] ID: %s | Status: %d | Output: %s", result.ID, result.Status, result.Output)
+	// Trace final result for debugging
+	logger.Info("[RESULT] Task: %s | Status: %d | Output Snippet: %s", 
+		result.ID, result.Status, result.Output)
 
 	return result
 }

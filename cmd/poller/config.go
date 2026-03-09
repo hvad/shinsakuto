@@ -7,22 +7,22 @@ import (
 	"shinsakuto/pkg/logger"
 )
 
-// PollerConfig defines the execution settings for a poller node
+// PollerConfig defines the operational settings for the poller node
 type PollerConfig struct {
-	PollerID      string   `json:"poller_id"`      // Unique identifier for this node
-	SchedulerURLs []string `json:"scheduler_urls"` // List of upstream schedulers
-	IntervalMS    int      `json:"interval_ms"`    // Polling frequency in milliseconds
-	MaxConcurrent int      `json:"max_concurrent"` // Max number of parallel checks
-	LogFile       string   `json:"log_file"`       // Path to the log file (optional)
-	Debug         bool     `json:"debug"`          // If true, enables tracing via logger.Info
+	PollerID      string   `json:"poller_id"`      // Unique ID for this poller
+	SchedulerURLs []string `json:"scheduler_urls"` // List of upstream Schedulers
+	IntervalMS    int      `json:"interval_ms"`    // Delay between poll cycles
+	MaxConcurrent int      `json:"max_concurrent"` // Max parallel check routines
+	LogFile       string   `json:"log_file"`       // Path to the log file
+	Debug         bool     `json:"debug"`          // Toggle for verbose tracing
 }
 
 var (
-	// Global application configuration instance
+	// Global variable to store loaded configuration
 	appConfig PollerConfig
 )
 
-// loadConfig reads the JSON configuration file from the specified path
+// loadConfig opens the specified JSON file and unmarshals it into appConfig
 func loadConfig(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -31,8 +31,8 @@ func loadConfig(path string) error {
 	return json.Unmarshal(data, &appConfig)
 }
 
-// initLogger passes configuration settings to the centralized logging package
+// initLogger configures the logging package with the settings from config
 func initLogger() {
-	// Debug traces will only be written to the log file/stdout if appConfig.Debug is true
+	// Passing log file path and debug flag to the internal logger setup
 	logger.Setup(appConfig.LogFile, appConfig.Debug)
 }

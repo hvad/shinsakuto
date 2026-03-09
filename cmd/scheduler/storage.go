@@ -41,6 +41,6 @@ func loadState() {
 
 	if err := json.Unmarshal(data, &st); err == nil {
 		hosts, services = st.Hosts, st.Services
-		logger.Info("State file loaded: %d hosts, %d services restored", len(hosts), len(services))
+		logger.Always("State restored: %d hosts, %d services", len(hosts), len(services))
 	}
 }

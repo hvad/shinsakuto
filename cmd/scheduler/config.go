@@ -16,7 +16,7 @@ type SchedConfig struct {
 	BrokerEnabled  bool     `json:"broker_enabled"`
 	BrokerURLs     []string `json:"broker_urls"`
 	StateFile      string   `json:"state_file"`
-	LogFile        string   `json:"log_file"`
+	LogFile       string   `json:"log_file"`
 	HistoryLog     string   `json:"history_log"`
 	Debug          bool     `json:"debug"`
 }
@@ -30,18 +30,16 @@ func loadConfig(path string) error {
 	return json.Unmarshal(data, &appConfig)
 }
 
-// initLoggers initializes the technical logger and history auditor
+// initLoggers initializes technical and history logs
 func initLoggers() {
-	// Initialize shared technical logger
+	// Global technical logger
 	logger.Setup(appConfig.LogFile, appConfig.Debug)
 
-	// Setup dedicated history log for state transitions
+	// Status transition history logger
 	if appConfig.HistoryLog != "" {
 		f, err := os.OpenFile(appConfig.HistoryLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err == nil {
 			statusLogger = log.New(f, "", log.LstdFlags)
-		} else {
-			logger.Info("[WARNING] Could not open history log file: %v", err)
 		}
 	}
 }

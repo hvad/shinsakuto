@@ -1,6 +1,6 @@
 {
   "scheduler_urls": [
-    "http://127.0.0.1:8091"
+    "http://127.0.0.1:8090"
   ],
   "poller_id": "poller-01",
   "interval_ms": 2000,

@@ -3,14 +3,13 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"shinsakuto/pkg/models"
-	"strings"
 	"time"
 
 	"shinsakuto/pkg/logger"
+	"shinsakuto/pkg/models"
 )
 
-// syncAllHandler receives the full configuration from the Arbiter
+// syncAllHandler receives full config from Arbiter and rebuilds maps
 func syncAllHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Info("Received SyncAll request from Arbiter")
 	var cfg models.GlobalConfig
@@ -23,7 +22,7 @@ func syncAllHandler(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Update Hosts while preserving dynamic state
+	// Rebuild Hosts while preserving state
 	newHosts := make(map[string]*models.Host)
 	for _, h := range cfg.Hosts {
 		hCopy := h
@@ -36,7 +35,7 @@ func syncAllHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	hosts = newHosts
 
-	// Update Services while preserving dynamic state
+	// Rebuild Services while preserving state
 	newServices := make(map[string]*models.Service)
 	for _, s := range cfg.Services {
 		sCopy := s
@@ -54,12 +53,13 @@ func syncAllHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// popTaskHandler serves the next available task to a Poller
+// popTaskHandler serves the next task reaching its check interval
 func popTaskHandler(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	defer mu.Unlock()
 
 	now := time.Now()
+	// Prioritize Host checks
 	for _, h := range hosts {
 		if h.CheckCommand != "" && now.After(h.NextCheck) {
 			h.NextCheck = now.Add(2 * time.Minute) 
@@ -67,6 +67,7 @@ func popTaskHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Service checks
 	for _, s := range services {
 		if s.CheckCommand != "" && now.After(s.NextCheck) {
 			s.NextCheck = now.Add(1 * time.Minute)
@@ -77,25 +78,23 @@ func popTaskHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// pushResultHandler processes results sent by Pollers
+// pushResultHandler queues results asynchronously to prevent lock contention
 func pushResultHandler(w http.ResponseWriter, r *http.Request) {
 	var res models.CheckResult
 	if err := json.NewDecoder(r.Body).Decode(&res); err != nil {
 		return
 	}
-	logger.Info("Result received for %s: status %d", res.ID, res.Status)
 
-	mu.Lock()
-	if strings.HasPrefix(res.ID, "HOST:") {
-		handleHostResult(res)
-	} else {
-		handleServiceResult(res)
+	select {
+	case resultQueue <- res:
+		w.WriteHeader(http.StatusAccepted) // 202 Accepted: queued for processing
+	default:
+		logger.Info("[WARNING] resultQueue full, dropping result for %s", res.ID)
+		w.WriteHeader(http.StatusServiceUnavailable)
 	}
-	stateChanged = true
-	mu.Unlock()
 }
 
-// statusHandler returns the current real-time state
+// statusHandler returns the current in-memory state
 func statusHandler(w http.ResponseWriter, r *http.Request) {
 	mu.RLock()
 	defer mu.RUnlock()
