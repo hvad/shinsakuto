@@ -9,19 +9,20 @@ import (
 
 // PollerConfig defines the execution settings for a poller node
 type PollerConfig struct {
-	PollerID      string   `json:"poller_id"`
-	SchedulerURLs []string `json:"scheduler_urls"`
-	IntervalMS    int      `json:"interval_ms"`
-	MaxConcurrent int      `json:"max_concurrent"`
-	LogFile       string   `json:"log_file"`
-	Debug         bool     `json:"debug"`
+	PollerID      string   `json:"poller_id"`      // Unique identifier for this node
+	SchedulerURLs []string `json:"scheduler_urls"` // List of upstream schedulers
+	IntervalMS    int      `json:"interval_ms"`    // Polling frequency in milliseconds
+	MaxConcurrent int      `json:"max_concurrent"` // Max number of parallel checks
+	LogFile       string   `json:"log_file"`       // Path to the log file (optional)
+	Debug         bool     `json:"debug"`          // If true, enables tracing via logger.Info
 }
 
 var (
+	// Global application configuration instance
 	appConfig PollerConfig
 )
 
-// loadConfig reads the JSON configuration from disk
+// loadConfig reads the JSON configuration file from the specified path
 func loadConfig(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -30,7 +31,8 @@ func loadConfig(path string) error {
 	return json.Unmarshal(data, &appConfig)
 }
 
-// initLogger connects the poller to the centralized logging system
+// initLogger passes configuration settings to the centralized logging package
 func initLogger() {
+	// Debug traces will only be written to the log file/stdout if appConfig.Debug is true
 	logger.Setup(appConfig.LogFile, appConfig.Debug)
 }

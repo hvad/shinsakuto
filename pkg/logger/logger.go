@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	debugMode bool
+	debugMode   bool
 	logFilePath string
 )
 
@@ -20,7 +20,6 @@ func Setup(filePath string, debug bool) {
 	if filePath != "" {
 		f, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 		if err == nil {
-			// Redirect global Go log to the file
 			log.SetOutput(f)
 		} else {
 			log.SetOutput(os.Stdout)
@@ -31,20 +30,25 @@ func Setup(filePath string, debug bool) {
 	}
 }
 
-// Info writes to the log file, and to terminal only if debug is enabled
+// Info writes to the log destination only if debugMode is enabled
 func Info(format string, v ...interface{}) {
+	// Only trace actions if debug mode is active
+	if !debugMode {
+		return
+	}
+
 	msg := fmt.Sprintf(format, v...)
 	
-	// Always log to the internal logger (file)
+	// Log to the configured output (file or stdout via global log)
 	log.Print(msg)
 
-	// Log to terminal only if debug is on and a file is being used
-	if debugMode && logFilePath != "" {
-		fmt.Fprintf(os.Stdout, "%s %s\n", time.Now().Format("2006/01/02 15:04:05"), msg)
+	// If logging to a file, also mirror to stdout for real-time monitoring
+	if logFilePath != "" {
+		fmt.Fprintf(os.Stdout, "%s [DEBUG] %s\n", time.Now().Format("2006/01/02 15:04:05"), msg)
 	}
 }
 
-// Fatal writes to logs and terminal, then exits
+// Fatal writes to logs and terminal, then exits. It ignores the debug flag because it's a critical failure.
 func Fatal(format string, v ...interface{}) {
 	msg := fmt.Sprintf(format, v...)
 	log.Print("[FATAL] " + msg)
