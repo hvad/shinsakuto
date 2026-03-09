@@ -13,9 +13,11 @@ import (
 	"syscall"
 	"time"
 
+	"shinsakuto/pkg/logger"
 	"shinsakuto/pkg/models"
 )
 
+// Global variables shared across the main package
 var (
 	hosts        = make(map[string]*models.Host)
 	services     = make(map[string]*models.Service)
@@ -24,53 +26,42 @@ var (
 	statusLogger *log.Logger
 	stateChanged bool
 	httpClient   = &http.Client{Timeout: 5 * time.Second}
-	brokerWG     sync.WaitGroup 
+	brokerWG     sync.WaitGroup
 )
 
 func main() {
-	configPath := flag.String("config", "config.json", "Path to configuration file")
+	configPath := flag.String("c", "config.json", "Path to configuration file")
 	daemonMode := flag.Bool("d", false, "Run as a daemon in the background")
 	flag.Parse()
 
-	// Handle Linux Daemonization via process re-execution
+	if err := loadConfig(*configPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Fatal: Could not load configuration: %v\n", err)
+		os.Exit(1)
+	}
+
+	initLoggers()
+	loadState()
+
 	if *daemonMode {
-		args := os.Args[1:]
-		newArgs := make([]string, 0)
-		for _, arg := range args {
-			if arg != "-d" {
-				newArgs = append(newArgs, arg)
-			}
-		}
-		cmd := exec.Command(os.Args[0], newArgs...)
+		cmd := exec.Command(os.Args[0], "-config", *configPath)
 		if err := cmd.Start(); err != nil {
-			fmt.Printf("[ERROR] Failed to start daemon: %v\n", err)
-			os.Exit(1)
+			logger.Fatal("Failed to start daemon: %v", err) //
 		}
 		fmt.Printf("[INFO] Scheduler starting in background (PID: %d)\n", cmd.Process.Pid)
 		os.Exit(0)
 	}
 
-	// 1. Load configuration and setup logging
-	if err := loadConfig(*configPath); err != nil {
-		fmt.Printf("Fatal: Could not load configuration: %v\n", err)
-		os.Exit(1)
-	}
-
-	initLoggers()
-	loadState() //
-
-	// 2. Periodic state persistence (every 1 minute)
+	// Periodic state persistence loop
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
 		for range ticker.C {
 			if stateChanged {
-				saveState() //
+				saveState()
 				stateChanged = false
 			}
 		}
 	}()
 
-	// 3. Register HTTP API routes
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/sync-all", syncAllHandler)
 	mux.HandleFunc("/v1/pop-task", popTaskHandler)
@@ -82,34 +73,31 @@ func main() {
 		Handler: mux,
 	}
 
-	// 4. Graceful Shutdown Management
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("[INFO] Scheduler active on port %d (BrokerEnabled: %v)", appConfig.APIPort, appConfig.BrokerEnabled)
+		logger.Info("Scheduler active on port %d (Broker: %v)", appConfig.APIPort, appConfig.BrokerEnabled)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server Error: %v", err)
+			logger.Fatal("Server Error: %v", err)
 		}
 	}()
 
 	<-stop
-	log.Println("[INFO] Shutting down gracefully...")
-	
-	// Gracefully stop the HTTP server first
+	logger.Info("Shutting down gracefully...")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("[ERROR] Server forced to shutdown: %v", err)
+		logger.Info("[ERROR] Server forced to shutdown: %v", err)
 	}
 
-	// Wait for any pending asynchronous broker requests to finish
 	if appConfig.BrokerEnabled {
-		log.Println("[INFO] Waiting for pending broker requests...")
+		logger.Info("Waiting for pending broker requests...")
 		brokerWG.Wait()
 	}
 
-	saveState() // Save final state to disk
-	log.Println("[INFO] Scheduler stopped safely.")
+	saveState()
+	logger.Info("Scheduler stopped safely.")
 }

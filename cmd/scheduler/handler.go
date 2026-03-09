@@ -6,14 +6,16 @@ import (
 	"shinsakuto/pkg/models"
 	"strings"
 	"time"
+
+	"shinsakuto/pkg/logger"
 )
 
 // syncAllHandler receives the full configuration from the Arbiter
 func syncAllHandler(w http.ResponseWriter, r *http.Request) {
-	logDebug("Received SyncAll request from Arbiter")
+	logger.Info("Received SyncAll request from Arbiter")
 	var cfg models.GlobalConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-		logDebug("Sync error: Failed to decode JSON")
+		logger.Info("Sync error: Failed to decode JSON")
 		http.Error(w, "Bad JSON", 400)
 		return
 	}
@@ -48,7 +50,7 @@ func syncAllHandler(w http.ResponseWriter, r *http.Request) {
 	services = newServices
 
 	stateChanged = true
-	logDebug("SyncAll successful: %d hosts, %d services", len(hosts), len(services))
+	logger.Info("SyncAll successful: %d hosts, %d services", len(hosts), len(services))
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -58,15 +60,13 @@ func popTaskHandler(w http.ResponseWriter, r *http.Request) {
 	defer mu.Unlock()
 
 	now := time.Now()
-	// Check Hosts first
 	for _, h := range hosts {
 		if h.CheckCommand != "" && now.After(h.NextCheck) {
-			h.NextCheck = now.Add(2 * time.Minute) // Lock task to prevent duplicates
+			h.NextCheck = now.Add(2 * time.Minute) 
 			json.NewEncoder(w).Encode(models.CheckTask{ID: "HOST:" + h.ID, Command: h.CheckCommand})
 			return
 		}
 	}
-	// Check Services
 	for _, s := range services {
 		if s.CheckCommand != "" && now.After(s.NextCheck) {
 			s.NextCheck = now.Add(1 * time.Minute)
@@ -83,7 +83,7 @@ func pushResultHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&res); err != nil {
 		return
 	}
-	logDebug("Result received for %s: status %d", res.ID, res.Status)
+	logger.Info("Result received for %s: status %d", res.ID, res.Status)
 
 	mu.Lock()
 	if strings.HasPrefix(res.ID, "HOST:") {

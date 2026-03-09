@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"os"
+
 	"shinsakuto/pkg/models"
+	"shinsakuto/pkg/logger"
 )
 
 // saveState serializes the current host and service status to disk
@@ -11,7 +13,7 @@ func saveState() {
 	mu.RLock()
 	defer mu.RUnlock()
 
-	logDebug("Persisting state to disk...")
+	logger.Info("Persisting state to disk...")
 	data, err := json.MarshalIndent(map[string]interface{}{
 		"hosts":    hosts,
 		"services": services,
@@ -39,6 +41,6 @@ func loadState() {
 
 	if err := json.Unmarshal(data, &st); err == nil {
 		hosts, services = st.Hosts, st.Services
-		logDebug("State file loaded: %d hosts, %d services restored", len(hosts), len(services))
+		logger.Info("State file loaded: %d hosts, %d services restored", len(hosts), len(services))
 	}
 }

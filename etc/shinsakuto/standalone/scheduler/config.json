@@ -1,9 +1,9 @@
 {
   "api_address": "127.0.0.1",
-  "api_port": 8091,
+  "api_port": 8090,
   "reactionner_url": "http://127.0.0.1:8070/v1/notify",
   "state_file": "var/lib/scheduler/states.json",
   "history_log": "var/log/history.log",
-  "system_log": "var/log/scheduler.log",
+  "log_file": "var/log/scheduler.log",
   "debug": true
 }
