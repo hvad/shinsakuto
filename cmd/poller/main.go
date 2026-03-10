@@ -16,23 +16,19 @@ import (
 	"shinsakuto/pkg/models"
 )
 
-// Shared HTTP client with a 10s timeout to prevent hanging connections
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
 func main() {
-	// Parse command-line flags
 	configPath := flag.String("c", "config.json", "Path to poller configuration")
 	daemonMode := flag.Bool("d", false, "Run poller in background")
 	flag.Parse()
 
-	// 1. Initialize configuration and logger
 	if err := loadConfig(*configPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Fatal: Could not load config: %v\n", err)
 		os.Exit(1)
 	}
 	initLogger()
 
-	// 2. Handle background execution (daemon mode)
 	if *daemonMode {
 		args := os.Args[1:]
 		newArgs := make([]string, 0)
@@ -51,67 +47,58 @@ func main() {
 		os.Exit(0)
 	}
 
-	// 3. Graceful shutdown handling
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
-	// Log lifecycle start event (always logged regardless of debug level)
 	logger.Always("Poller %s version 1.0 starting... [Interval: %dms]", appConfig.PollerID, appConfig.IntervalMS)
 
-	// 4. Concurrency control via semaphore (channel)
 	sem := make(chan struct{}, appConfig.MaxConcurrent)
 
-	// Start the main polling loop in a goroutine
 	go func() {
 		for {
 			for _, schedulerURL := range appConfig.SchedulerURLs {
-				task, err := pullTaskFromURL(schedulerURL)
+				// On récupère les données brutes car le Scheduler peut envoyer un Host ou un Service
+				taskData, err := pullTaskFromURL(schedulerURL)
 				if err != nil {
-					// Silent skip if no tasks or scheduler is unreachable
 					continue 
 				}
 
-				// Acquire semaphore slot
 				sem <- struct{}{}
-				go func(t models.CheckTask, originURL string) {
+				go func(data []byte, originURL string) {
 					defer func() { <-sem }()
 					
-					// Execute the command and report result back to the specific scheduler
-					result := executeTask(t)
+					// Extraction de la commande et de l'ID (compatible Host et Service)
+					result := executeTask(data)
 					pushResultToURL(result, originURL)
-				}(task, schedulerURL)
+				}(taskData, schedulerURL)
 			}
-
-			// Respect the configured polling interval
 			time.Sleep(time.Duration(appConfig.IntervalMS) * time.Millisecond)
 		}
 	}()
 
-	// Block until a signal is received
 	sig := <-stop
 	logger.Always("Poller %s received signal (%v). Shutting down gracefully.", appConfig.PollerID, sig)
 	os.Exit(0)
 }
 
-// pullTaskFromURL fetches a task from a Scheduler's pop-task endpoint
-func pullTaskFromURL(baseURL string) (models.CheckTask, error) {
+// pullTaskFromURL retourne maintenant []byte pour permettre un décodage flexible dans l'executor
+func pullTaskFromURL(baseURL string) ([]byte, error) {
 	url := fmt.Sprintf("%s/v1/pop-task", baseURL)
 	resp, err := httpClient.Get(url)
 	if err != nil {
-		return models.CheckTask{}, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return models.CheckTask{}, fmt.Errorf("no tasks available")
+		return nil, fmt.Errorf("no tasks available")
 	}
 
-	var task models.CheckTask
-	err = json.NewDecoder(resp.Body).Decode(&task)
-	return task, err
+	var buf bytes.Buffer
+	_, err = buf.ReadFrom(resp.Body)
+	return buf.Bytes(), err
 }
 
-// pushResultToURL sends the command execution outcome back to the Scheduler
 func pushResultToURL(res models.CheckResult, baseURL string) {
 	url := fmt.Sprintf("%s/v1/push-result", baseURL)
 	payload, _ := json.Marshal(res)
@@ -119,10 +106,8 @@ func pushResultToURL(res models.CheckResult, baseURL string) {
 	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(payload))
 	if err == nil {
 		resp.Body.Close()
-		// Debug level log for successful network operation
 		logger.Info("[NETWORK] Successfully pushed result for task %s to %s", res.ID, baseURL)
 	} else {
-		// Log failures even in non-debug mode to identify network issues
 		logger.Info("[ERROR] Failed to push result for task %s to %s: %v", res.ID, baseURL, err)
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -11,40 +12,43 @@ import (
 	"shinsakuto/pkg/models"
 )
 
-// executeTask runs the provided command and captures Nagios-style exit codes
-func executeTask(task models.CheckTask) models.CheckResult {
-	// Debug trace for start of execution
-	logger.Info("[EXECUTOR] Running task ID: %s | Command: %s", task.ID, task.Command)
+// executeTask décode le JSON entrant pour identifier s'il s'agit d'un Host ou d'un Service
+func executeTask(data []byte) models.CheckResult {
+	// Structure temporaire pour extraire les champs communs
+	var raw struct {
+		ID           string `json:"id"`
+		CheckCommand string `json:"check_command"`
+	}
 
-	// Set a 30s context timeout to ensure no hanging processes or orphans
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return models.CheckResult{Status: 3, Output: "Error decoding task JSON"}
+	}
+
+	logger.Info("[EXECUTOR] Running task ID: %s | Command: %s", raw.ID, raw.CheckCommand)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Execute through /bin/sh to support shell features in the command string
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", task.Command)
+	// Exécution de la commande liée au service/hôte
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", raw.CheckCommand)
 	output, err := cmd.CombinedOutput()
 
 	result := models.CheckResult{
-		ID:     task.ID,
+		ID:     raw.ID,
 		Output: strings.TrimSpace(string(output)),
 	}
 
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
-			// Extract standard Nagios exit codes: 
-			// 0: OK, 1: WARNING, 2: CRITICAL, 3: UNKNOWN
 			result.Status = exitError.Sys().(syscall.WaitStatus).ExitStatus()
 		} else {
-			// If execution itself failed (e.g. context timeout or binary not found)
 			result.Status = 3 // UNKNOWN
 			result.Output = err.Error()
 		}
 	} else {
-		// Command finished successfully with exit code 0
 		result.Status = 0 // OK
 	}
 
-	// Trace final result for debugging
 	logger.Info("[RESULT] Task: %s | Status: %d | Output Snippet: %s", 
 		result.ID, result.Status, result.Output)
 

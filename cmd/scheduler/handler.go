@@ -9,7 +9,7 @@ import (
 	"shinsakuto/pkg/models"
 )
 
-// syncAllHandler receives full config from Arbiter and rebuilds maps
+// syncAllHandler receives the full configuration from the Arbiter and rebuilds internal maps.
 func syncAllHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Info("Received SyncAll request from Arbiter")
 	var cfg models.GlobalConfig
@@ -22,7 +22,7 @@ func syncAllHandler(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Rebuild Hosts while preserving state
+	// Rebuild Hosts while preserving their current runtime state.
 	newHosts := make(map[string]*models.Host)
 	for _, h := range cfg.Hosts {
 		hCopy := h
@@ -35,7 +35,7 @@ func syncAllHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	hosts = newHosts
 
-	// Rebuild Services while preserving state
+	// Rebuild Services while preserving their current runtime state.
 	newServices := make(map[string]*models.Service)
 	for _, s := range cfg.Services {
 		sCopy := s
@@ -49,36 +49,39 @@ func syncAllHandler(w http.ResponseWriter, r *http.Request) {
 	services = newServices
 
 	stateChanged = true
-	logger.Info("SyncAll successful: %d hosts, %d services", len(hosts), len(services))
+	logger.Always("SyncAll successful: %d hosts, %d services synced", len(hosts), len(services))
 	w.WriteHeader(http.StatusOK)
 }
 
-// popTaskHandler serves the next task reaching its check interval
+// popTaskHandler serves the next pending task reaching its check interval.
+// It sends the full Host or Service object so the Poller has access to the linked Command.
 func popTaskHandler(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	defer mu.Unlock()
 
 	now := time.Now()
-	// Prioritize Host checks
+	// 1. Prioritize Host health checks.
 	for _, h := range hosts {
 		if h.CheckCommand != "" && now.After(h.NextCheck) {
-			h.NextCheck = now.Add(2 * time.Minute) 
-			json.NewEncoder(w).Encode(models.CheckTask{ID: "HOST:" + h.ID, Command: h.CheckCommand})
+			h.NextCheck = now.Add(2 * time.Minute)
+			// Return the full Host object; Poller will use h.ID and h.Address.
+			json.NewEncoder(w).Encode(h)
 			return
 		}
 	}
-	// Service checks
+	// 2. Service checks.
 	for _, s := range services {
 		if s.CheckCommand != "" && now.After(s.NextCheck) {
 			s.NextCheck = now.Add(1 * time.Minute)
-			json.NewEncoder(w).Encode(models.CheckTask{ID: s.ID, Command: s.CheckCommand})
+			// Return the full Service object; Poller will use s.CommandDefinition.
+			json.NewEncoder(w).Encode(s)
 			return
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// pushResultHandler queues results asynchronously to prevent lock contention
+// pushResultHandler queues incoming results asynchronously to prevent lock contention.
 func pushResultHandler(w http.ResponseWriter, r *http.Request) {
 	var res models.CheckResult
 	if err := json.NewDecoder(r.Body).Decode(&res); err != nil {
@@ -87,14 +90,14 @@ func pushResultHandler(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case resultQueue <- res:
-		w.WriteHeader(http.StatusAccepted) // 202 Accepted: queued for processing
+		w.WriteHeader(http.StatusAccepted) // 202 Accepted: queued for processing.
 	default:
 		logger.Info("[WARNING] resultQueue full, dropping result for %s", res.ID)
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
 }
 
-// statusHandler returns the current in-memory state
+// statusHandler returns the current global in-memory state as JSON.
 func statusHandler(w http.ResponseWriter, r *http.Request) {
 	mu.RLock()
 	defer mu.RUnlock()

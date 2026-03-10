@@ -26,6 +26,7 @@ var (
 	coolOffStartTime  time.Time
 )
 
+// startWatcher begins the configuration monitoring and synchronization loops.
 func startWatcher(ctx context.Context) {
 	refreshConfig()
 
@@ -50,6 +51,7 @@ func startWatcher(ctx context.Context) {
 	}
 }
 
+// refreshConfig reloads definitions from disk, audits them, and syncs to Schedulers.
 func refreshConfig() {
 	if isInCoolOff {
 		coolOffDuration := time.Duration(appConfig.SchedulerCoolOffMinutes) * time.Minute
@@ -90,6 +92,7 @@ func refreshConfig() {
 	}
 }
 
+// partitionConfig splits the global configuration into multiple shards for Schedulers.
 func partitionConfig(fullCfg *models.GlobalConfig, n int) []models.GlobalConfig {
 	if n <= 1 {
 		return []models.GlobalConfig{*fullCfg}
@@ -122,6 +125,7 @@ func partitionConfig(fullCfg *models.GlobalConfig, n int) []models.GlobalConfig 
 	return shards
 }
 
+// syncShardsToSchedulers sends partitioned configurations to their respective Scheduler nodes.
 func syncShardsToSchedulers(shards []models.GlobalConfig) {
 	successCount := 0
 	totalSchedulers := len(appConfig.SchedulerURLs)
@@ -171,9 +175,11 @@ func syncShardsToSchedulers(shards []models.GlobalConfig) {
 	}
 }
 
+// loadAndProcess handles the inheritance resolution and command linkage.
 func loadAndProcess() (*models.GlobalConfig, error) {
 	raw := &models.GlobalConfig{}
 	
+	// 1. Traverse and Unmarshal all YAML definitions
 	err := filepath.Walk(appConfig.DefinitionsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() { return err }
 		if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
@@ -194,12 +200,19 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 	})
 	if err != nil { return nil, err }
 
+	// 2. Map Commands for quick lookup during linkage
+	commandMap := make(map[string]models.Command)
+	for _, cmd := range raw.Commands {
+		commandMap[cmd.ID] = cmd
+	}
+
 	final := &models.GlobalConfig{
 		Commands:    raw.Commands,
 		TimePeriods: raw.TimePeriods,
 		Contacts:    raw.Contacts,
 	}
 
+	// 3. Process Templates
 	hTemplates := make(map[string]models.Host)
 	for _, h := range raw.Hosts {
 		if h.Register != nil && !*h.Register { hTemplates[h.ID] = h }
@@ -215,6 +228,7 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 	sGroups := make(map[string]*models.ServiceGroup)
 	for i := range raw.ServiceGroups { sGroups[raw.ServiceGroups[i].ID] = &raw.ServiceGroups[i] }
 
+	// 4. Resolve Host Inheritance
 	for _, h := range raw.Hosts {
 		if h.Register == nil || *h.Register {
 			resolved := resolveHostInheritance(h, hTemplates, 0)
@@ -229,9 +243,22 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 		}
 	}
 
+	// 5. Resolve Service Inheritance and LINK Commands
 	for _, s := range raw.Services {
 		if s.Register == nil || *s.Register {
 			resolved := resolveServiceInheritance(s, sTemplates, 0)
+
+			// LINKING PHASE: Bind the Command object to the Service
+			if cmd, exists := commandMap[resolved.CheckCommand]; exists {
+				resolved.CommandDefinition = cmd
+			} else {
+				// Fallback for raw inline commands like "echo 'Test'"
+				resolved.CommandDefinition = models.Command{
+					ID:          "inline_exec",
+					CommandLine: resolved.CheckCommand,
+				}
+			}
+
 			final.Services = append(final.Services, resolved)
 			for _, gn := range resolved.ServiceGroups {
 				if group, ok := sGroups[gn]; ok {
@@ -249,6 +276,7 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 	return final, nil
 }
 
+// resolveHostInheritance recurses through "use" fields to build a complete Host object.
 func resolveHostInheritance(h models.Host, templates map[string]models.Host, depth int) models.Host {
 	if depth > 5 || h.Use == "" { return h }
 	if parent, ok := templates[h.Use]; ok {
@@ -262,6 +290,7 @@ func resolveHostInheritance(h models.Host, templates map[string]models.Host, dep
 	return h
 }
 
+// resolveServiceInheritance recurses through "use" fields to build a complete Service object.
 func resolveServiceInheritance(s models.Service, templates map[string]models.Service, depth int) models.Service {
 	if depth > 5 || s.Use == "" { return s }
 	if parent, ok := templates[s.Use]; ok {
@@ -274,6 +303,7 @@ func resolveServiceInheritance(s models.Service, templates map[string]models.Ser
 	return s
 }
 
+// broadcastToFollowers propagates local definitions to all Raft followers.
 func broadcastToFollowers() {
 	var buf bytes.Buffer
 	gzw := gzip.NewWriter(&buf)
@@ -308,6 +338,7 @@ func broadcastToFollowers() {
 	}
 }
 
+// startHotReloadLoop watches for file changes to trigger automatic re-syncing.
 func startHotReloadLoop(ctx context.Context) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil { return }
