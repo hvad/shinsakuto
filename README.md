@@ -76,3 +76,20 @@ History Log: The Scheduler maintains a dedicated file (history.log) for auditing
 | /v1/pop-task | GET | Poller | Retrieval of a command to execute. | 
 | /v1/push-result | POST | Poller | Asynchronous submission of a check result. |
 | /v1/status | GET | CLI | Real-time global state visualization in JSON. |
+
+## Container (by Apple)
+
+### Build shinsakuto image from Dockerfile
+
+```bash
+container build -t shinsakuto:latest .
+```
+
+### Run image
+
+```bash
+container run -it -p 8080:8080 -p 8090:8090 \
+-v "$(pwd)/etc/shinsakuto/standalone:/shinsakuto/etc" \
+-v "$(pwd)/etc/shinsakuto/conf.d:/shinsakuto/etc/shinsakuto/conf.d" \
+-v "$(pwd)/var/lib/scheduler:/shinsakuto/var/lib/scheduler" shinsakuto
+```
