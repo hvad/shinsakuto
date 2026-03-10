@@ -9,14 +9,15 @@ import (
 
 // BrokerConfig defines the settings for data ingestion and storage
 type BrokerConfig struct {
-	APIPort         int    `json:"api_port"`
-	TSDBUrl         string `json:"tsdb_url"`           // VictoriaMetrics or InfluxDB write endpoint
-	TSDBToken       string `json:"tsdb_token"`         // Optional Authorization token
-	BatchSize       int    `json:"batch_size"`         // Number of points per write operation
-	FlushIntervalMS int    `json:"flush_interval_ms"`  // Max time before forcing a database write
-	WorkerCount     int    `json:"worker_count"`       // Number of concurrent database writers
-	LogFile         string `json:"log_file"`           // Path to the broker log file
-	Debug           bool   `json:"debug"`              // Enable verbose terminal output
+	Address         int    `json:"address"`
+	Port            int    `json:"port"`
+	TSDBUrl         string `json:"tsdb_url"`          // VictoriaMetrics or InfluxDB write endpoint
+	TSDBToken       string `json:"tsdb_token"`        // Optional Authorization token
+	BatchSize       int    `json:"batch_size"`        // Number of points per write operation
+	FlushIntervalMS int    `json:"flush_interval_ms"` // Max time before forcing a database write
+	WorkerCount     int    `json:"worker_count"`      // Number of concurrent database writers
+	LogFile         string `json:"log_file"`          // Path to the broker log file
+	Debug           bool   `json:"debug"`             // Enable verbose terminal output
 }
 
 var appConfig BrokerConfig

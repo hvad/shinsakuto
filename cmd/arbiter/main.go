@@ -89,7 +89,7 @@ func main() {
 	go startWatcher(ctx)
 	go startAPI()
 
-	logger.Always("[START] Arbiter listening on port %d", appConfig.APIPort)
+	logger.Always("[START] Arbiter listening on port %d", appConfig.Port)
 	
 	<-ctx.Done()
 	logger.Always("[STOP] Shutting down Arbiter...")

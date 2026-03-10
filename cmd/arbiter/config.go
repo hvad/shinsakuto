@@ -15,8 +15,8 @@ type ArbiterLocalConfig struct {
 	SchedulerURLs           []string `json:"scheduler_urls"`
 	SchedulerCoolOffMinutes int      `json:"scheduler_cool_off_minutes"`
 	DefinitionsDir          string   `json:"definitions_dir"`
-	APIAddress              string   `json:"api_address"`
-	APIPort                 int      `json:"api_port"`
+	Address                 string   `json:"address"` 
+	Port                    int      `json:"port"`    
 	LogFile                 string   `json:"log_file"`
 	Debug                   bool     `json:"debug"`
 	HotReload               bool     `json:"hot_reload"`

@@ -1,5 +1,6 @@
 {
-  "api_port": 8084,
+  "address": "127.0.0.1",
+  "port": 8084,
   "tsdb_url": "http://127.0.0.1:8428/write",
   "tsdb_token": "",
   "batch_size": 100,

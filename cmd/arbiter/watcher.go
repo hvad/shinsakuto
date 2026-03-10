@@ -323,7 +323,7 @@ func broadcastToFollowers() {
 	tw.Close(); gzw.Close()
 
 	payload := buf.Bytes()
-	self := fmt.Sprintf("%s:%d", appConfig.APIAddress, appConfig.APIPort)
+	self := fmt.Sprintf("%s:%d", appConfig.Address, appConfig.Port)
 
 	for _, addr := range appConfig.ClusterNodes {
 		if addr == self { continue }

@@ -31,7 +31,8 @@ func startAPI() {
 	mux.HandleFunc("/v1/cluster/sync-receiver", handleClusterSync)
 	mux.HandleFunc("/v1/cluster/join", handleJoin)
 
-	addr := fmt.Sprintf("%s:%d", appConfig.APIAddress, appConfig.APIPort)
+	// Using the updated Address and Port fields
+	addr := fmt.Sprintf("%s:%d", appConfig.Address, appConfig.Port)
 	logger.Always("[API] Arbiter API server listening on %s", addr)
 
 	if err := http.ListenAndServe(addr, mux); err != nil {
@@ -65,7 +66,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	role := "Standalone"
 	if appConfig.HAEnabled && raftNode != nil {
-		role = raftNode.State().String() // Utilise le type raft ici
+		role = raftNode.State().String()
 	}
 
 	res := map[string]interface{}{

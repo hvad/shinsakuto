@@ -52,12 +52,16 @@ func main() {
 
 	// 5. Setup API Route for Schedulers to push data
 	http.HandleFunc("/v1/broker/data", handleIngestion)
+	// 6. Setup API Route for Broker status
+	http.HandleFunc("/v1/status", statusHandler)
 
-	logger.Info("Shinsakuto Broker listening on port %d", appConfig.APIPort)
-	serverAddr := fmt.Sprintf(":%d", appConfig.APIPort)
-	
-	if err := http.ListenAndServe(serverAddr, nil); err != nil {
-		logger.Fatal("API server failed: %v", err)
+	// Build the listen address string using the new config fields
+	listenAddr := fmt.Sprintf("%s:%d", appConfig.Address, appConfig.Port)
+	logger.Always("Shinsakuto Broker listening on %s", listenAddr)
+
+	// Start the API Server
+	if err := http.ListenAndServe(listenAddr, nil); err != nil {
+		logger.Fatal("Broker API server crashed: %v", err)
 	}
 }
 
@@ -83,4 +87,15 @@ func handleIngestion(w http.ResponseWriter, r *http.Request) {
 		logger.Info("Broker queue full! Dropping data for %s", res.ID)
 		http.Error(w, "Broker overloaded", http.StatusServiceUnavailable)
 	}
+}
+
+// statusHandler returns current health and port info
+func statusHandler(w http.ResponseWriter, r *http.Request) {
+	status := map[string]interface{}{
+		"status":  "running",
+		"address": appConfig.Address,
+		"port":    appConfig.Port,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
 }

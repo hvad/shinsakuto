@@ -4,9 +4,9 @@
   "definitions_dir": "etc/shinsakuto/conf.d/standalone",
   "api_address": "127.0.0.1",
   "api_port": 8080,
-  "debug": true,
   "log_file": "var/log/arbiter.log",
   "hot_reload": true,
   "hot_reload_debounce": 5,
-  "sync_interval": 60
+  "sync_interval": 60,
+  "debug": true
 }
