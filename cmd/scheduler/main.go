@@ -29,7 +29,7 @@ var (
 	httpClient   = &http.Client{Timeout: 5 * time.Second}
 	brokerWG     sync.WaitGroup
 	// resultQueue decouples HTTP reception from logic processing to prevent saturation
-	resultQueue  = make(chan models.CheckResult, 5000)
+	resultQueue = make(chan models.CheckResult, 5000)
 )
 
 func main() {
@@ -80,8 +80,9 @@ func main() {
 	mux.HandleFunc("/v1/push-result", pushResultHandler)
 	mux.HandleFunc("/v1/status", statusHandler)
 
+	listenAddr := fmt.Sprintf("%s:%d", appConfig.Address, appConfig.Port)
 	server := &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", appConfig.APIAddress, appConfig.APIPort),
+		Addr:    listenAddr,
 		Handler: mux,
 	}
 
@@ -90,7 +91,7 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		logger.Always("Scheduler active on port %d", appConfig.APIPort)
+		logger.Always("Scheduler listening on %s", listenAddr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("Server Error: %v", err)
 		}

@@ -7,8 +7,8 @@ import (
 	"net/smtp"
 	"time"
 
-	"shinsakuto/pkg/models"
 	"shinsakuto/pkg/logger"
+	"shinsakuto/pkg/models"
 )
 
 // processNotification evaluates if an alert should be sent or muted
@@ -37,9 +37,9 @@ func processNotification(req models.NotificationRequest) {
 	mu.RUnlock()
 
 	// 3. Alert Auditing: Write to the dedicated alert history file (AlertsLog)
-	alertLogger.Printf("[%s] %s | State: %d | Output: %s", 
+	alertLogger.Printf("[%s] %s | State: %d | Output: %s",
 		req.Type, req.EntityID, req.State, req.Output)
-	
+
 	// 4. Trigger Reactions (e.g., Email)
 	go sendEmail(req)
 }
@@ -49,12 +49,12 @@ func sendEmail(req models.NotificationRequest) {
 	if !appConfig.SMTP.Enabled {
 		return
 	}
-	
+
 	addr := fmt.Sprintf("%s:%d", appConfig.SMTP.Host, appConfig.SMTP.Port)
 	subject := fmt.Sprintf("Subject: [%s] %s\n", req.Type, req.EntityID)
-	
+
 	// Message Construction
-	body := fmt.Sprintf("To: %s\n%s\n\n--- Shinsakuto Alert ---\nEntity: %s\nType: %s\nState: %d\nOutput: %s\nTime: %s", 
+	body := fmt.Sprintf("To: %s\n%s\n\n--- Shinsakuto Alert ---\nEntity: %s\nType: %s\nState: %d\nOutput: %s\nTime: %s",
 		appConfig.SMTP.To, subject, req.EntityID, req.Type, req.State, req.Output, time.Now().Format(time.RFC822))
 
 	auth := smtp.PlainAuth("", appConfig.SMTP.Username, appConfig.SMTP.Password, appConfig.SMTP.Host)
@@ -67,13 +67,13 @@ func sendEmail(req models.NotificationRequest) {
 			InsecureSkipVerify: false,
 			ServerName:         appConfig.SMTP.Host,
 		}
-		
+
 		conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 		if err != nil {
 			logger.Info("[ERROR] SMTP Connection failed: %v", err)
 			return
 		}
-		
+
 		client, err := smtp.NewClient(tls.Client(conn, tlsConfig), appConfig.SMTP.Host)
 		if err != nil {
 			logger.Info("[ERROR] SMTP TLS handshake failed: %v", err)
@@ -85,10 +85,10 @@ func sendEmail(req models.NotificationRequest) {
 			logger.Info("[ERROR] SMTP Auth failed: %v", err)
 			return
 		}
-		
+
 		client.Mail(appConfig.SMTP.From)
 		client.Rcpt(appConfig.SMTP.To)
-		
+
 		w, _ := client.Data()
 		w.Write([]byte(body))
 		w.Close()

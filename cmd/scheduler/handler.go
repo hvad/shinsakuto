@@ -76,7 +76,7 @@ func popTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 			// Resolve the command template from our library
 			cmdLine := commandLibrary[h.CheckCommand]
-			
+
 			json.NewEncoder(w).Encode(map[string]string{
 				"id":           h.ID,
 				"command_line": cmdLine,

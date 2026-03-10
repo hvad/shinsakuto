@@ -50,7 +50,7 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
-	logger.Always("Poller %s version 1.0 starting... [Interval: %dms]", appConfig.PollerID, appConfig.IntervalMS)
+	logger.Always("Poller %s starting... [Interval: %dms]", appConfig.PollerID, appConfig.IntervalMS)
 
 	sem := make(chan struct{}, appConfig.MaxConcurrent)
 

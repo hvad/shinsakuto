@@ -10,13 +10,13 @@ import (
 
 // SchedConfig defines the runtime parameters for the Scheduler
 type SchedConfig struct {
-	APIAddress     string   `json:"api_address"`
-	APIPort        int      `json:"api_port"`
+	Address        string   `json:"address"`
+	Port           int      `json:"port"`
 	ReactionnerURL string   `json:"reactionner_url"`
 	BrokerEnabled  bool     `json:"broker_enabled"`
 	BrokerURLs     []string `json:"broker_urls"`
 	StateFile      string   `json:"state_file"`
-	LogFile       string   `json:"log_file"`
+	LogFile        string   `json:"log_file"`
 	HistoryLog     string   `json:"history_log"`
 	Debug          bool     `json:"debug"`
 }

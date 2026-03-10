@@ -9,7 +9,7 @@ import (
 
 // BrokerConfig defines the settings for data ingestion and storage
 type BrokerConfig struct {
-	Address         int    `json:"address"`
+	Address         string `json:"address"`
 	Port            int    `json:"port"`
 	TSDBUrl         string `json:"tsdb_url"`          // VictoriaMetrics or InfluxDB write endpoint
 	TSDBToken       string `json:"tsdb_token"`        // Optional Authorization token

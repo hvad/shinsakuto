@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"shinsakuto/pkg/models"
 	"shinsakuto/pkg/logger"
+	"shinsakuto/pkg/models"
 )
 
 var (
@@ -56,10 +56,10 @@ func main() {
 	http.HandleFunc("/v1/ack", ackHandler)
 	http.HandleFunc("/v1/status", statusHandler)
 
-	logger.Info("Shinsakuto Reactionner listening on port %d", appConfig.APIPort)
-	
-	// Start the API Server
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", appConfig.APIPort), nil); err != nil {
+	listenAddr := fmt.Sprintf("%s:%d", appConfig.Address, appConfig.Port)
+	logger.Always("Shinsakuto Reactionner listening on %s", listenAddr)
+
+	if err := http.ListenAndServe(listenAddr, nil); err != nil {
 		logger.Fatal("API server crashed: %v", err)
 	}
 }
@@ -71,26 +71,28 @@ func notifyHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
 		return
 	}
-	
+
 	// If it's a RECOVERY and HA is enabled, synchronize state across the cluster
 	if req.Type == "RECOVERY" && appConfig.HAEnabled && isLeader() {
 		payload, _ := json.Marshal(RaftPayload{Action: "RECOVERY", ID: req.EntityID})
 		raftNode.Apply(payload, 5*time.Second)
 		logger.Info("[HA] Replicated recovery state for entity: %s", req.EntityID)
 	}
-	
+
 	processNotification(req)
 	w.WriteHeader(http.StatusOK)
 }
 
 // ackHandler manages manual acknowledgments to mute alerts
 func ackHandler(w http.ResponseWriter, r *http.Request) {
-	var body struct{ EntityID string `json:"entity_id"` }
+	var body struct {
+		EntityID string `json:"entity_id"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	
+
 	if appConfig.HAEnabled {
 		if !isLeader() {
 			http.Error(w, "Not the cluster leader", http.StatusForbidden)
@@ -113,6 +115,8 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 	status := map[string]interface{}{
 		"is_leader": isLeader(),
 		"ha_active": appConfig.HAEnabled,
+		"address":   appConfig.Address,
+		"port":      appConfig.Port,
 		"uptime":    time.Now().Unix(),
 	}
 	json.NewEncoder(w).Encode(status)

@@ -10,12 +10,13 @@ import (
 
 // Config holds the Reactionner runtime parameters
 type Config struct {
-	APIPort   int        `json:"api_port"`
+	Address   string     `json:"address"`
+	Port      int        `json:"port"`
 	Debug     bool       `json:"debug"`
-	LogFile   string     `json:"log_file"`    
+	LogFile   string     `json:"log_file"`
 	AlertsLog string     `json:"alerts_log"`
 	SMTP      SMTPConfig `json:"smtp"`
-	
+
 	// HA / Raft Configuration
 	HAEnabled        bool     `json:"ha_enabled"`
 	RaftNodeID       string   `json:"raft_node_id"`
@@ -38,14 +39,16 @@ type SMTPConfig struct {
 var (
 	appConfig       Config
 	alertLogger     *log.Logger
-	maintenances    = make(map[string]int64) 
+	maintenances    = make(map[string]int64)
 	acknowledgments = make(map[string]bool)
 )
 
 // loadConfig reads the JSON configuration file
 func loadConfig(path string) error {
 	data, err := os.ReadFile(path)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return json.Unmarshal(data, &appConfig)
 }
 

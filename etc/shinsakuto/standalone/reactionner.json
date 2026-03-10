@@ -1,5 +1,6 @@
 {
-  "api_port": 8070,
+  "address": "127.0.0.1",
+  "port": 8070,
   "debug": true,
   "log_file": "var/log/reactionner.log",
   "alerts_log": "var/log/alerts.log",
@@ -11,13 +12,5 @@
     "password": "your_password",
     "from": "monitoring@example.com",
     "to": "admin@example.com"
-  },
-  "ha_enabled": false,
-  "raft_node_id": "reactionner-01",
-  "raft_bind_addr": "127.0.0.1:10003",
-  "raft_data_dir": "var/lib/reactionner-01",
-  "bootstrap_cluster": true,
-  "cluster_nodes": [
-    "127.0.0.1:8083"
-  ]
+  }
 }

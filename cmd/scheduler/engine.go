@@ -91,7 +91,7 @@ func forwardToBroker(res models.CheckResult) {
 // notifyReactionner contacts the notification engine to inform users of issues.
 func notifyReactionner(id, t string, state int, out string) {
 	logger.Info("Triggering notification for %s", id)
-	
+
 	req := NotificationRequest{
 		EntityID:  id,
 		Type:      t,
@@ -99,16 +99,16 @@ func notifyReactionner(id, t string, state int, out string) {
 		Output:    out,
 		Timestamp: time.Now(),
 	}
-	
+
 	payload, _ := json.Marshal(req)
-	
+
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		hReq, _ := http.NewRequestWithContext(ctx, "POST", appConfig.ReactionnerURL, bytes.NewBuffer(payload))
 		hReq.Header.Set("Content-Type", "application/json")
-		
+
 		resp, err := httpClient.Do(hReq)
 		if err == nil {
 			resp.Body.Close()

@@ -26,10 +26,14 @@ func setupRaft() error {
 	config.LocalID = raft.ServerID(appConfig.RaftNodeID)
 
 	addr, err := net.ResolveTCPAddr("tcp", appConfig.RaftBindAddr)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 
 	transport, err := raft.NewTCPTransport(appConfig.RaftBindAddr, addr, 3, 10*time.Second, os.Stderr)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 
 	os.MkdirAll(appConfig.RaftDataDir, 0755)
 	snapshots, _ := raft.NewFileSnapshotStore(appConfig.RaftDataDir, 2, os.Stderr)
@@ -37,7 +41,9 @@ func setupRaft() error {
 	stableStore, _ := raftboltdb.NewBoltStore(filepath.Join(appConfig.RaftDataDir, "raft-stable.db"))
 
 	r, err := raft.NewRaft(config, &reactionnerFSM{}, logStore, stableStore, snapshots, transport)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	raftNode = r
 
 	if appConfig.BootstrapCluster {
@@ -50,7 +56,9 @@ func setupRaft() error {
 
 // isLeader checks if the current node is the active Raft leader
 func isLeader() bool {
-	if !appConfig.HAEnabled { return true }
+	if !appConfig.HAEnabled {
+		return true
+	}
 	return raftNode != nil && raftNode.State() == raft.Leader
 }
 
@@ -74,8 +82,9 @@ func (f *reactionnerFSM) Apply(l *raft.Log) interface{} {
 }
 
 func (f *reactionnerFSM) Snapshot() (raft.FSMSnapshot, error) { return &fsmSnapshot{}, nil }
-func (f *reactionnerFSM) Restore(rc io.ReadCloser) error { return nil }
+func (f *reactionnerFSM) Restore(rc io.ReadCloser) error      { return nil }
 
 type fsmSnapshot struct{}
+
 func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error { return nil }
-func (s *fsmSnapshot) Release() {}
+func (s *fsmSnapshot) Release()                             {}

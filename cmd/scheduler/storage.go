@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"os"
 
-	"shinsakuto/pkg/models"
 	"shinsakuto/pkg/logger"
+	"shinsakuto/pkg/models"
 )
 
 // saveState serializes the current host and service status to disk
