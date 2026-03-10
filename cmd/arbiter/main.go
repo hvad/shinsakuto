@@ -4,11 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
+
+	"shinsakuto/pkg/logger"
 )
 
 func main() {
@@ -18,15 +19,17 @@ func main() {
 	flag.Parse()
 
 	if err := loadArbiterLocalConfig(*cfgPath); err != nil {
-		log.Fatalf("[FATAL] Arbiter : Failed to load configuration: %v", err)
+		// Using standard log here because logger.Setup hasn't run yet if load fails early
+		fmt.Fprintf(os.Stderr, "[FATAL] Arbiter : Failed to load configuration: %v\n", err)
+		os.Exit(1)
 	}
 
 	// 3. Verification Mode (-v)
 	if *verifyOnly {
-		fmt.Printf("[INFO] Analyzing definitions in: %s\n", appConfig.DefinitionsDir)
+		logger.Always("Analyzing definitions in: %s", appConfig.DefinitionsDir)
 		cfg, err := loadAndProcess()
 		if err != nil {
-			fmt.Printf("[ERROR] YAML Processing failed: %v\n", err)
+			logger.Always("[ERROR] YAML Processing failed: %v", err)
 			os.Exit(1)
 		}
 
@@ -45,18 +48,18 @@ func main() {
 		fmt.Println("-------------------------------------------")
 
 		for _, w := range audit.Warnings {
-			fmt.Printf("[WARNING] %s\n", w)
+			logger.Always("[WARNING] %s", w)
 		}
 
 		if len(audit.Errors) > 0 {
 			for _, e := range audit.Errors {
-				fmt.Printf("[ERROR] %s\n", e)
+				logger.Always("[ERROR] %s", e)
 			}
-			fmt.Println("\n[INFO] Result: Invalid Configuration")
+			logger.Always("Result: Invalid Configuration")
 			os.Exit(1)
 		}
 
-		fmt.Println("\n[INFO] Result: Configuration Valid")
+		logger.Always("Result: Configuration Valid")
 		os.Exit(0)
 	}
 
@@ -64,20 +67,20 @@ func main() {
 	if *daemon {
 		cmd := exec.Command(os.Args[0], "-config", *cfgPath)
 		if err := cmd.Start(); err != nil {
-			logFatal("[ERROR] Arbiter failed to start daemon: %v", err)
+			logger.Fatal("Arbiter failed to start daemon: %v", err)
 		}
-		fmt.Printf("[START] Arbiter started in background (PID: %d)\n", cmd.Process.Pid)
+		logger.Always("Arbiter started in background (PID: %d)", cmd.Process.Pid)
 		os.Exit(0)
 	}
 
 	// 5. HA Initialization
 	if appConfig.HAEnabled {
-		logArbiter("[HA] Initializing Raft node: %s", appConfig.RaftNodeID)
+		logger.Always("[HA] Initializing Raft node: %s", appConfig.RaftNodeID)
 		if err := setupRaft(); err != nil {
-			logFatal("[FATAL] Raft error: %v", err)
+			logger.Fatal("Raft error: %v", err)
 		}
 	} else {
-		logArbiter("[INFO] Arbiter Standalone mode")
+		logger.Always("Arbiter Standalone mode")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -86,8 +89,8 @@ func main() {
 	go startWatcher(ctx)
 	go startAPI()
 
-	logArbiter("[START] Arbiter start on port %d", appConfig.APIPort)
+	logger.Always("[START] Arbiter listening on port %d", appConfig.APIPort)
 	
 	<-ctx.Done()
-	logArbiter("[STOP] Shutting down Arbiter...")
+	logger.Always("[STOP] Shutting down Arbiter...")
 }

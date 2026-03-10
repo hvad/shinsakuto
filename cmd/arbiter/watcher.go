@@ -8,13 +8,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"shinsakuto/pkg/logger"
 	"shinsakuto/pkg/models"
 	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v3"
@@ -26,12 +26,9 @@ var (
 	coolOffStartTime  time.Time
 )
 
-// startWatcher initializes the background loops for configuration management.
 func startWatcher(ctx context.Context) {
-	// Initial configuration load
 	refreshConfig()
 
-	// Periodic synchronization loop to maintain cluster consistency
 	go func() {
 		ticker := time.NewTicker(time.Duration(appConfig.SyncInterval) * time.Second)
 		defer ticker.Stop()
@@ -39,7 +36,7 @@ func startWatcher(ctx context.Context) {
 			select {
 			case <-ticker.C:
 				if isLeader() {
-					logArbiter("[WATCHER] Periodic sharding sync triggered by leader")
+					logger.Info("[WATCHER] Periodic sharding sync triggered by leader")
 					refreshConfig()
 				}
 			case <-ctx.Done():
@@ -53,13 +50,11 @@ func startWatcher(ctx context.Context) {
 	}
 }
 
-// refreshConfig triggers a full reload, sharding partition, and propagation cycle.
 func refreshConfig() {
-	// Check if we are in the safety cool-off period
 	if isInCoolOff {
 		coolOffDuration := time.Duration(appConfig.SchedulerCoolOffMinutes) * time.Minute
 		if time.Since(coolOffStartTime) < coolOffDuration {
-			logArbiter("[WATCHER] Sync skipped: system is in cool-off until %v", coolOffStartTime.Add(coolOffDuration).Format("15:04:05"))
+			logger.Info("[WATCHER] Sync skipped: system in cool-off until %v", coolOffStartTime.Add(coolOffDuration).Format("15:04:05"))
 			return
 		}
 		isInCoolOff = false 
@@ -67,7 +62,7 @@ func refreshConfig() {
 
 	cfg, err := loadAndProcess()
 	if err != nil {
-		log.Printf("[ERROR] Failed to process configuration: %v", err)
+		logger.Always("[ERROR] Failed to process configuration: %v", err)
 		return
 	}
 
@@ -76,32 +71,25 @@ func refreshConfig() {
 	lastSyncTime = time.Now()
 	configMutex.Unlock()
 
-	// Only the Leader is allowed to push shards to Schedulers
 	if !isLeader() {
 		return
 	}
 
-	// Validate configuration integrity
 	audit := RunLinter(cfg)
 	if len(audit.Errors) > 0 {
-		logArbiter("[LINTER] Rejected: %d errors found", len(audit.Errors))
+		logger.Always("[LINTER] Rejected: %d errors found", len(audit.Errors))
 		syncSuccess = false
 		return
 	}
 
-	// Partition the configuration into shards based on the number of schedulers
 	shards := partitionConfig(cfg, len(appConfig.SchedulerURLs))
-	
-	// Push unique shards to each Scheduler with Retry Logic
 	go syncShardsToSchedulers(shards)
 
-	// Propagate configuration files to all HA Follower nodes
 	if appConfig.HAEnabled {
 		broadcastToFollowers()
 	}
 }
 
-// partitionConfig splits the GlobalConfig into N unique shards.
 func partitionConfig(fullCfg *models.GlobalConfig, n int) []models.GlobalConfig {
 	if n <= 1 {
 		return []models.GlobalConfig{*fullCfg}
@@ -109,7 +97,6 @@ func partitionConfig(fullCfg *models.GlobalConfig, n int) []models.GlobalConfig 
 
 	shards := make([]models.GlobalConfig, n)
 	for i := 0; i < n; i++ {
-		// Commands, Periods, and Contacts are mirrored to all shards for contextual integrity
 		shards[i] = models.GlobalConfig{
 			Commands:    fullCfg.Commands,
 			TimePeriods: fullCfg.TimePeriods,
@@ -119,7 +106,6 @@ func partitionConfig(fullCfg *models.GlobalConfig, n int) []models.GlobalConfig 
 		}
 	}
 
-	// Distribute Hosts using Round-Robin sharding
 	hostToShard := make(map[string]int)
 	for i, host := range fullCfg.Hosts {
 		shardIdx := i % n
@@ -127,7 +113,6 @@ func partitionConfig(fullCfg *models.GlobalConfig, n int) []models.GlobalConfig 
 		hostToShard[host.ID] = shardIdx
 	}
 
-	// Distribute Services to the same shard as their Host to prevent cross-node logic errors
 	for _, service := range fullCfg.Services {
 		if idx, ok := hostToShard[service.HostName]; ok {
 			shards[idx].Services = append(shards[idx].Services, service)
@@ -137,13 +122,12 @@ func partitionConfig(fullCfg *models.GlobalConfig, n int) []models.GlobalConfig 
 	return shards
 }
 
-// syncShardsToSchedulers iterates over scheduler URLs and pushes their respective shards.
 func syncShardsToSchedulers(shards []models.GlobalConfig) {
 	successCount := 0
 	totalSchedulers := len(appConfig.SchedulerURLs)
 
 	if totalSchedulers == 0 {
-		logArbiter("[WARNING] No Scheduler URLs configured")
+		logger.Always("[WARNING] No Scheduler URLs configured")
 		return
 	}
 
@@ -153,22 +137,21 @@ func syncShardsToSchedulers(shards []models.GlobalConfig) {
 		url := strings.TrimSuffix(rawURL, "/") + "/v1/sync-all"
 		data, _ := json.Marshal(shards[i])
 		
-		// Retry logic: 3 attempts per scheduler
 		for attempt := 1; attempt <= 3; attempt++ {
-			logArbiter("[WATCHER] Sending shard %d to %s (Attempt %d/3)", i, url, attempt)
+			logger.Info("[WATCHER] Sending shard %d to %s (Attempt %d/3)", i, url, attempt)
 			
 			resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(data))
 			if err == nil && resp.StatusCode == http.StatusOK {
 				resp.Body.Close()
-				logArbiter("[WATCHER] Successfully synchronized shard %d with %s", i, url)
+				logger.Info("[WATCHER] Successfully synchronized shard %d with %s", i, url)
 				successCount++
 				break 
 			}
 
 			if err != nil {
-				logArbiter("[WATCHER] Attempt %d failed for %s: %v", attempt, url, err)
+				logger.Info("[WATCHER] Attempt %d failed for %s: %v", attempt, url, err)
 			} else {
-				logArbiter("[WATCHER] Attempt %d failed for %s: Status %d", attempt, url, resp.StatusCode)
+				logger.Info("[WATCHER] Attempt %d failed for %s: Status %d", attempt, url, resp.StatusCode)
 				resp.Body.Close()
 			}
 
@@ -178,9 +161,8 @@ func syncShardsToSchedulers(shards []models.GlobalConfig) {
 		}
 	}
 
-	// Handle critical failure if no schedulers were reached
 	if successCount == 0 {
-		logArbiter("[CRITICAL] Failed to reach any Scheduler. Entering cool-off for %d minutes", appConfig.SchedulerCoolOffMinutes)
+		logger.Info("[CRITICAL] Failed to reach any Scheduler. Entering cool-off for %d minutes", appConfig.SchedulerCoolOffMinutes)
 		isInCoolOff = true
 		coolOffStartTime = time.Now()
 		syncSuccess = false
@@ -189,7 +171,6 @@ func syncShardsToSchedulers(shards []models.GlobalConfig) {
 	}
 }
 
-// loadAndProcess handles recursive inheritance and automatic group assignment.
 func loadAndProcess() (*models.GlobalConfig, error) {
 	raw := &models.GlobalConfig{}
 	
@@ -321,7 +302,7 @@ func broadcastToFollowers() {
 			resp, err := httpClient.Post(url, "application/x-gzip", bytes.NewReader(payload))
 			if err == nil {
 				resp.Body.Close()
-				logArbiter("[HA] Propagated config to follower: %s", target)
+				logger.Info("[HA] Propagated config to follower: %s", target)
 			}
 		}(addr)
 	}
@@ -336,7 +317,7 @@ func startHotReloadLoop(ctx context.Context) {
 		select {
 		case ev := <-w.Events:
 			if (ev.Op&fsnotify.Write == fsnotify.Write || ev.Op&fsnotify.Create == fsnotify.Create) && isLeader() {
-				logArbiter("[HOTRELOAD] Change detected in %s, re-syncing shards", ev.Name)
+				logger.Always("[HOTRELOAD] Change detected in %s, re-syncing shards", ev.Name)
 				refreshConfig()
 			}
 		case <-ctx.Done():
