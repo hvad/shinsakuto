@@ -1,0 +1,67 @@
+hosts:
+
+  - id: generic-host
+    register: false 
+    check_command: check_ping
+    check_period: "24x7"
+    notification_period: "workhours"
+    contacts:
+      - admin
+
+  - id: localhost
+    use: generic-host
+    register: true
+    address: 127.0.0.1
+    alias: Local Machine
+    hostgroups:
+      - linux-servers
+
+services:
+
+  - id: generic-service
+    register: false 
+    check_command: check_ping
+    normal_interval: 60
+    retry_interval: 20
+    max_attempts: 3
+    check_period: "24x7"
+    notification_period: "workhours"
+
+  - id: ping
+    use: generic-service 
+    host_name: localhost
+
+commands:
+
+  - id: check_ping
+    command_line: "/sbin/ping -c 3 $ADDRESS$ > /dev/null && echo 0 || echo 2"
+
+contacts:
+
+  - id: admin
+    email: admin@example.com
+
+hostgroups:
+
+  - id: linux-servers
+    alias: All Linux Systems
+
+timeperiods:
+
+  - id: "24x7"
+    alias: "Every day, all day"
+    monday: ["00:00-24:00"]
+    tuesday: ["00:00-24:00"]
+    wednesday: ["00:00-24:00"]
+    thursday: ["00:00-24:00"]
+    friday: ["00:00-24:00"]
+    saturday: ["00:00-24:00"]
+    sunday: ["00:00-24:00"]
+
+  - id: "workhours"
+    alias: "Standard Business Hours"
+    monday: ["08:00-18:00"]
+    tuesday: ["08:00-18:00"]
+    wednesday: ["08:00-18:00"]
+    thursday: ["08:00-18:00"]
+    friday: ["08:00-18:00"]

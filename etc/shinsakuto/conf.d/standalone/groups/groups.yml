@@ -1,9 +1,0 @@
-hostgroups:
-  - id: linux-servers
-    alias: All Linux Systems
-  - id: web
-    alias: Production Web Servers
-
-servicegroups:
-  - id: critical-checks
-    alias: High Priority Services
