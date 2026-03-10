@@ -70,8 +70,9 @@ History Log: The Scheduler maintains a dedicated file (history.log) for auditing
 
 ## API Endpoints (Scheduler)
 
-Endpoint | Method | Consumer | Description
-/v1/sync-all| POST | Arbiter | Bulk update of the inventory.
-/v1/pop-task | GET | Poller | Retrieval of a command to execute.
-/v1/push-result | POST | Poller | Asynchronous submission of a check result.
-/v1/status | GET | CLI | Real-time global state visualization in JSON.
+| Endpoint | Method | Consumer | Description |
+| :--- | :--- | :--- | :--- |
+| /v1/sync-all| POST | Arbiter | Bulk update of the inventory. | 
+| /v1/pop-task | GET | Poller | Retrieval of a command to execute. | 
+| /v1/push-result | POST | Poller | Asynchronous submission of a check result. |
+| /v1/status | GET | CLI | Real-time global state visualization in JSON. |
