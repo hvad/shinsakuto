@@ -77,7 +77,7 @@ History Log: The Scheduler maintains a dedicated file (history.log) for auditing
 | /v1/push-result | POST | Poller | Asynchronous submission of a check result. |
 | /v1/status | GET | CLI | Real-time global state visualization in JSON. |
 
-## Container (by Apple)
+## Container
 
 ### Build shinsakuto image from Dockerfile
 
