@@ -33,12 +33,8 @@ COPY --from=builder /app/bin/* ./bin/
 
 # Create the directory structure
 RUN mkdir -p /shinsakuto/etc/shinsakuto/conf.d/standalone \
-             /shinsakuto/etc/shinsakuto/standalone/arbiter \
-             /shinsakuto/etc/shinsakuto/standalone/scheduler \
-             /shinsakuto/etc/shinsakuto/standalone/poller \
-             /shinsakuto/etc/shinsakuto/standalone/reactionner \
-             /shinsakuto/etc/shinsakuto/standalone/broker \
-             /shinsakuto/var/log/arbiter 
+             /shinsakuto/etc/shinsakuto/standalone \
+             /shinsakuto/var/log
 
 # Copy configuration files from your local etc/ directory to the image
 # This assumes your local folder structure matches the internal one
@@ -46,11 +42,11 @@ COPY etc/shinsakuto/ /shinsakuto/etc/shinsakuto/
 
 # Create the entrypoint script
 RUN echo '#!/bin/sh' > /shinsakuto/entrypoint.sh && \
-    echo './bin/arbiter -config /shinsakuto/etc/shinsakuto/arbiter/config.json &' >> /shinsakuto/entrypoint.sh && \
-    echo './bin/scheduler  -config /shinsakuto/etc/shinsakuto/scheduler/config.json &' >> /shinsakuto/entrypoint.sh && \
-    echo './bin/reactionner  -config /shinsakuto/etc/shinsakuto/reactionner/config.json &' >> /shinsakuto/entrypoint.sh && \
-    echo './bin/broker -config /shinsakuto/etc/shinsakuto/broker/config.json &' >> /shinsakuto/entrypoint.sh && \
-    echo './bin/poller -config /shinsakuto/etc/shinsakuto/poller/config.json' >> /shinsakuto/entrypoint.sh && \
+    echo './bin/arbiter -config /shinsakuto/etc/arbiter.json &' >> /shinsakuto/entrypoint.sh && \
+    echo './bin/scheduler  -config /shinsakuto/etc/scheduler.json &' >> /shinsakuto/entrypoint.sh && \
+    echo './bin/reactionner  -config /shinsakuto/etc/reactionner.json &' >> /shinsakuto/entrypoint.sh && \
+    echo './bin/broker -config /shinsakuto/etc/broker.json &' >> /shinsakuto/entrypoint.sh && \
+    echo './bin/poller -config /shinsakuto/etc/poller.json' >> /shinsakuto/entrypoint.sh && \
     chmod +x /shinsakuto/entrypoint.sh
 
 # Expose internal ports
