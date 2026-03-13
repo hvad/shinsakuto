@@ -34,7 +34,7 @@ services:
 commands:
 
   - id: check_ping
-    command_line: "/sbin/ping -c 3 $ADDRESS$ > /dev/null && echo 0 || echo 2"
+    command_line: "$USER1$/ping -c 3 $ADDRESS$ > /dev/null && echo 0 || echo 2"
 
 contacts:
 
@@ -65,3 +65,7 @@ timeperiods:
     wednesday: ["08:00-18:00"]
     thursday: ["08:00-18:00"]
     friday: ["08:00-18:00"]
+
+macros:
+  USER1: "/sbin"
+  TIMEOUT: "30"

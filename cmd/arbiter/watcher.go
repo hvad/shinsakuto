@@ -102,6 +102,7 @@ func partitionConfig(fullCfg *models.GlobalConfig, n int) []models.GlobalConfig 
 	for i := 0; i < n; i++ {
 		shards[i] = models.GlobalConfig{
 			Commands:    fullCfg.Commands,
+			Macros:      fullCfg.Macros,
 			TimePeriods: fullCfg.TimePeriods,
 			Contacts:    fullCfg.Contacts,
 			Hosts:       []models.Host{},
@@ -175,18 +176,24 @@ func syncShardsToSchedulers(shards []models.GlobalConfig) {
 	}
 }
 
-// loadAndProcess handles the inheritance resolution and command linkage.
+// loadAndProcess handles the inheritance resolution, command linkage, and macro extraction.
 func loadAndProcess() (*models.GlobalConfig, error) {
-	raw := &models.GlobalConfig{}
+	raw := &models.GlobalConfig{
+		Macros: make(map[string]string),
+	}
 	
-	// 1. Traverse and Unmarshal all YAML definitions
+	// 1. Traverse and Unmarshal all YAML definitions from the configuration directory
 	err := filepath.Walk(appConfig.DefinitionsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() { return err }
+		
+		// Process only .yaml and .yml files
 		if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
 			data, err := os.ReadFile(path)
 			if err != nil { return err }
+			
 			var tmp models.GlobalConfig
 			if err := yaml.Unmarshal(data, &tmp); err == nil {
+				// Append standard monitoring objects
 				raw.Hosts = append(raw.Hosts, tmp.Hosts...)
 				raw.Services = append(raw.Services, tmp.Services...)
 				raw.Commands = append(raw.Commands, tmp.Commands...)
@@ -194,25 +201,33 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 				raw.Contacts = append(raw.Contacts, tmp.Contacts...)
 				raw.HostGroups = append(raw.HostGroups, tmp.HostGroups...)
 				raw.ServiceGroups = append(raw.ServiceGroups, tmp.ServiceGroups...)
+				
+				// CRITICAL: Extract and merge macros found in the YAML file
+				// This ensures that "macros: USER1: /sbin" is captured
+				for k, v := range tmp.Macros {
+					raw.Macros[k] = v
+				}
 			}
 		}
 		return nil
 	})
 	if err != nil { return nil, err }
 
-	// 2. Map Commands for quick lookup during linkage
+	// 2. Map Commands for quick lookup during the linkage phase
 	commandMap := make(map[string]models.Command)
 	for _, cmd := range raw.Commands {
 		commandMap[cmd.ID] = cmd
 	}
 
+	// Initialize the final config with collected base objects and macros
 	final := &models.GlobalConfig{
 		Commands:    raw.Commands,
 		TimePeriods: raw.TimePeriods,
 		Contacts:    raw.Contacts,
+		Macros:      raw.Macros, // Include the merged macros map
 	}
 
-	// 3. Process Templates
+	// 3. Process Templates (objects with register: false)
 	hTemplates := make(map[string]models.Host)
 	for _, h := range raw.Hosts {
 		if h.Register != nil && !*h.Register { hTemplates[h.ID] = h }
@@ -243,16 +258,16 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 		}
 	}
 
-	// 5. Resolve Service Inheritance and LINK Commands
+	// 5. Resolve Service Inheritance and LINK Commands to their definitions
 	for _, s := range raw.Services {
 		if s.Register == nil || *s.Register {
 			resolved := resolveServiceInheritance(s, sTemplates, 0)
 
-			// LINKING PHASE: Bind the Command object to the Service
+			// LINKING PHASE: Bind the actual Command definition to the Service
 			if cmd, exists := commandMap[resolved.CheckCommand]; exists {
 				resolved.CommandDefinition = cmd
 			} else {
-				// Fallback for raw inline commands like "echo 'Test'"
+				// Fallback for raw inline commands or unresolved IDs
 				resolved.CommandDefinition = models.Command{
 					ID:          "inline_exec",
 					CommandLine: resolved.CheckCommand,
@@ -270,11 +285,115 @@ func loadAndProcess() (*models.GlobalConfig, error) {
 		}
 	}
 
+	// Consolidate groups into the final configuration
 	for _, g := range hGroups { final.HostGroups = append(final.HostGroups, *g) }
 	for _, g := range sGroups { final.ServiceGroups = append(final.ServiceGroups, *g) }
 
 	return final, nil
 }
+
+//// loadAndProcess handles the inheritance resolution and command linkage.
+//func loadAndProcess() (*models.GlobalConfig, error) {
+//	raw := &models.GlobalConfig{
+//		Macros: make(map[string]string),
+//	}
+//	
+//	// 1. Traverse and Unmarshal all YAML definitions
+//	err := filepath.Walk(appConfig.DefinitionsDir, func(path string, info os.FileInfo, err error) error {
+//		if err != nil || info.IsDir() { return err }
+//		if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
+//			data, err := os.ReadFile(path)
+//			if err != nil { return err }
+//			var tmp models.GlobalConfig
+//			if err := yaml.Unmarshal(data, &tmp); err == nil {
+//				raw.Hosts = append(raw.Hosts, tmp.Hosts...)
+//				raw.Services = append(raw.Services, tmp.Services...)
+//				raw.Commands = append(raw.Commands, tmp.Commands...)
+//				raw.TimePeriods = append(raw.TimePeriods, tmp.TimePeriods...)
+//				raw.Contacts = append(raw.Contacts, tmp.Contacts...)
+//				raw.HostGroups = append(raw.HostGroups, tmp.HostGroups...)
+//				raw.ServiceGroups = append(raw.ServiceGroups, tmp.ServiceGroups...)
+//			}
+//		}
+//		return nil
+//	})
+//	if err != nil { return nil, err }
+//
+//	// 2. Map Commands for quick lookup during linkage
+//	commandMap := make(map[string]models.Command)
+//	for _, cmd := range raw.Commands {
+//		commandMap[cmd.ID] = cmd
+//	}
+//
+//	final := &models.GlobalConfig{
+//		Commands:    raw.Commands,
+//		TimePeriods: raw.TimePeriods,
+//		Contacts:    raw.Contacts,
+//	}
+//
+//	// 3. Process Templates
+//	hTemplates := make(map[string]models.Host)
+//	for _, h := range raw.Hosts {
+//		if h.Register != nil && !*h.Register { hTemplates[h.ID] = h }
+//	}
+//	sTemplates := make(map[string]models.Service)
+//	for _, s := range raw.Services {
+//		if s.Register != nil && !*s.Register { sTemplates[s.ID] = s }
+//	}
+//
+//	hGroups := make(map[string]*models.HostGroup)
+//	for i := range raw.HostGroups { hGroups[raw.HostGroups[i].ID] = &raw.HostGroups[i] }
+//	
+//	sGroups := make(map[string]*models.ServiceGroup)
+//	for i := range raw.ServiceGroups { sGroups[raw.ServiceGroups[i].ID] = &raw.ServiceGroups[i] }
+//
+//	// 4. Resolve Host Inheritance
+//	for _, h := range raw.Hosts {
+//		if h.Register == nil || *h.Register {
+//			resolved := resolveHostInheritance(h, hTemplates, 0)
+//			final.Hosts = append(final.Hosts, resolved)
+//			for _, gn := range resolved.HostGroups {
+//				if group, ok := hGroups[gn]; ok {
+//					group.Members = append(group.Members, resolved.ID)
+//				} else {
+//					hGroups[gn] = &models.HostGroup{ID: gn, Members: []string{resolved.ID}}
+//				}
+//			}
+//		}
+//	}
+//
+//	// 5. Resolve Service Inheritance and LINK Commands
+//	for _, s := range raw.Services {
+//		if s.Register == nil || *s.Register {
+//			resolved := resolveServiceInheritance(s, sTemplates, 0)
+//
+//			// LINKING PHASE: Bind the Command object to the Service
+//			if cmd, exists := commandMap[resolved.CheckCommand]; exists {
+//				resolved.CommandDefinition = cmd
+//			} else {
+//				// Fallback for raw inline commands like "echo 'Test'"
+//				resolved.CommandDefinition = models.Command{
+//					ID:          "inline_exec",
+//					CommandLine: resolved.CheckCommand,
+//				}
+//			}
+//
+//			final.Services = append(final.Services, resolved)
+//			for _, gn := range resolved.ServiceGroups {
+//				if group, ok := sGroups[gn]; ok {
+//					group.Members = append(group.Members, fmt.Sprintf("%s,%s", resolved.HostName, resolved.ID))
+//				} else {
+//					sGroups[gn] = &models.ServiceGroup{ID: gn, Members: []string{fmt.Sprintf("%s,%s", resolved.HostName, resolved.ID)}}
+//				}
+//			}
+//		}
+//	}
+//
+//	for _, g := range hGroups { final.HostGroups = append(final.HostGroups, *g) }
+//	for _, g := range sGroups { final.ServiceGroups = append(final.ServiceGroups, *g) }
+//
+//	return final, nil
+//}
 
 // resolveHostInheritance recurses through "use" fields to build a complete Host object.
 func resolveHostInheritance(h models.Host, templates map[string]models.Host, depth int) models.Host {

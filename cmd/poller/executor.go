@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -13,13 +14,15 @@ import (
 	"shinsakuto/pkg/models"
 )
 
-// executeTask runs the command-line and replaces the $ADDRESS$ macro
+// executeTask runs the command-line, replaces the $ADDRESS$ macro, 
+// and handles custom user macros like $USER1$.
 func executeTask(data []byte) models.CheckResult {
-	// Internal struct to match the JSON sent by popTaskHandler
+	// Internal struct updated to include the Macros map from the Scheduler.
 	var task struct {
-		ID          string `json:"id"`
-		CommandLine string `json:"command_line"`
-		Address     string `json:"address"`
+		ID          string            `json:"id"`
+		CommandLine string            `json:"command_line"`
+		Address     string            `json:"address"`
+		Macros      map[string]string `json:"macros"` 
 	}
 
 	if err := json.Unmarshal(data, &task); err != nil {
@@ -29,19 +32,28 @@ func executeTask(data []byte) models.CheckResult {
 		}
 	}
 
-	// Perform macro substitution for $ADDRESS$
-	finalCommand := strings.ReplaceAll(task.CommandLine, "$ADDRESS$", task.Address)
+	finalCommand := task.CommandLine
+
+	// 1. Perform custom macro substitution (e.g., $USER1$, $TIMEOUT$).
+	// We iterate through the macros map and replace each occurrence in the command string.
+	for key, value := range task.Macros {
+		macroName := fmt.Sprintf("$%s$", key)
+		finalCommand = strings.ReplaceAll(finalCommand, macroName, value)
+	}
+
+	// 2. Perform standard macro substitution for $ADDRESS$.
+	finalCommand = strings.ReplaceAll(finalCommand, "$ADDRESS$", task.Address)
 
 	logger.Info("[EXECUTOR] Running task ID: %s | Command: %s", task.ID, finalCommand)
 
-	// Set a 30s timeout for safety
+	// Set a 30s timeout for safety.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Execute via shell to support variables and complex arguments
+	// Execute via shell to support variables and complex arguments.
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", finalCommand)
 	
-	// Inject standard binary paths to avoid 'command not found' (Error 127)
+	// Inject standard binary paths to avoid 'command not found' (Error 127).
 	cmd.Env = append(os.Environ(), "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 
 	output, err := cmd.CombinedOutput()
@@ -53,15 +65,15 @@ func executeTask(data []byte) models.CheckResult {
 
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
-			// Extract Nagios exit codes (0:OK, 1:WARN, 2:CRIT, 3:UNK)
+			// Extract Nagios-style exit codes (0:OK, 1:WARN, 2:CRIT, 3:UNK).
 			result.Status = exitError.Sys().(syscall.WaitStatus).ExitStatus()
 		} else {
-			// Context timeout or execution failure
+			// Handle context timeout or execution failure.
 			result.Status = 3 
 			result.Output = err.Error()
 		}
 	} else {
-		// Command finished successfully
+		// Command finished successfully (Exit Code 0).
 		result.Status = 0 
 	}
 

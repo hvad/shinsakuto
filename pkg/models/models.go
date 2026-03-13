@@ -13,6 +13,7 @@ type GlobalConfig struct {
 	HostGroups    []HostGroup    `json:"hostgroups"`
 	ServiceGroups []ServiceGroup `json:"servicegroups"`
 	Downtimes     []Downtime     `json:"downtimes"`
+	Macros        map[string]string `json:"macros"`
 }
 
 // Host represents a monitored entity (server, network device, etc.) or a template.

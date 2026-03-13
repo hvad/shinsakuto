@@ -12,6 +12,9 @@ import (
 // Global map to store command definitions for host check resolution
 var commandLibrary = make(map[string]string)
 
+// Global map to store user macros (e.g., $USER1$) received from the Arbiter
+var globalMacros = make(map[string]string)
+
 // syncAllHandler receives the full configuration from the Arbiter and rebuilds internal maps.
 func syncAllHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Info("Received SyncAll request from Arbiter")
@@ -29,6 +32,12 @@ func syncAllHandler(w http.ResponseWriter, r *http.Request) {
 	commandLibrary = make(map[string]string)
 	for _, cmd := range cfg.Commands {
 		commandLibrary[cmd.ID] = cmd.CommandLine
+	}
+
+	// Store macros received from the Arbiter for the Poller to use
+	globalMacros = cfg.Macros
+	if globalMacros == nil {
+		globalMacros = make(map[string]string)
 	}
 
 	// Rebuild Hosts while preserving their current runtime state
@@ -58,11 +67,12 @@ func syncAllHandler(w http.ResponseWriter, r *http.Request) {
 	services = newServices
 
 	stateChanged = true
-	logger.Always("SyncAll successful: %d hosts, %d services synced", len(hosts), len(services))
+	logger.Always("SyncAll successful: %d hosts, %d services, %d macros synced", len(hosts), len(services), len(globalMacros))
 	w.WriteHeader(http.StatusOK)
 }
 
-// popTaskHandler serves the next pending task. It now includes the command line and address.
+// popTaskHandler serves the next pending task. 
+// It includes the command line, address, and the global macros map for the Poller.
 func popTaskHandler(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -77,10 +87,12 @@ func popTaskHandler(w http.ResponseWriter, r *http.Request) {
 			// Resolve the command template from our library
 			cmdLine := commandLibrary[h.CheckCommand]
 
-			json.NewEncoder(w).Encode(map[string]string{
-				"id":           h.ID,
+			// Send data as a general map to include the macros dictionary
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":           "HOST:" + h.ID,
 				"command_line": cmdLine,
-				"address":      h.Address, // From Host.Address
+				"address":      h.Address,
+				"macros":       globalMacros, 
 			})
 			return
 		}
@@ -88,7 +100,6 @@ func popTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Service checks
 	for _, s := range services {
-		// Access command via CommandDefinition.CommandLine
 		if s.CommandDefinition.CommandLine != "" && now.After(s.NextCheck) {
 			s.NextCheck = now.Add(1 * time.Minute)
 
@@ -98,10 +109,11 @@ func popTaskHandler(w http.ResponseWriter, r *http.Request) {
 				addr = h.Address
 			}
 
-			json.NewEncoder(w).Encode(map[string]string{
+			json.NewEncoder(w).Encode(map[string]interface{}{
 				"id":           s.ID,
 				"command_line": s.CommandDefinition.CommandLine,
 				"address":      addr,
+				"macros":       globalMacros,
 			})
 			return
 		}
